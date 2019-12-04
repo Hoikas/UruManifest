@@ -33,3 +33,6 @@ pip-log.txt
 *.pydevproject
 *.sublime-*
 .vs
+
+# Local UruManifest stuff
+config.ini
