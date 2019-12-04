@@ -88,13 +88,22 @@ def find_age_dependencies(source_assets, staged_assets, ncpus=None):
     return manifests
 
 def _find_page_externals(client_path, source_path, dlevel=plDebug.kDLNone):
-    # Optimization: Textures.prp does not have any externals...
-    if source_path.name.endswith("Textures.prp"):
-        return {}
+    def read_pko(key):
+        koStub = key.object
+        assert isinstance(koStub, hsKeyedObjectStub)
+
+        # This is somewhat inefficient WRT copying data, but better than trying to handle all
+        # the doggong DSpan reading...
+        stream = hsRAMStream(pvMoul)
+        stream.writeShort(koStub.stub.ClassIndexVer(pvMoul))
+        stream.write(koStub.stub.getData())
+        stream.rewind()
+        # important to use a new manager -- the old one will crash...
+        return plResManager(pvMoul).ReadCreatable(stream)
 
     plDebug.Init(dlevel)
     mgr = plResManager()
-    page_info = mgr.ReadPage(source_path)
+    page_info = mgr.ReadPage(source_path, True)
 
     pfm_idx = plFactory.ClassIndex("plPythonFileMod")
     sfx_idx = plFactory.ClassIndex("plSoundBuffer")
@@ -105,12 +114,13 @@ def _find_page_externals(client_path, source_path, dlevel=plDebug.kDLNone):
 
     result = []
     for i in get_keys(pfm_idx):
-        client_path = Path("Python", f"{i.object.filename}.py")
+        pfm = read_pko(i)
+        client_path = Path("Python", f"{pfm.filename}.py")
         flags = ManifestFlags.python_file_mod | ManifestFlags.script
         result.append((client_path, flags))
 
     for i in get_keys(sfx_idx):
-        sbuf = i.object
+        sbuf = read_pko(i)
         client_path = Path("sfx", sbuf.fileName)
         if sbuf.flags & plSoundBuffer.kStreamCompressed:
             flags = ManifestFlags.sound_stream_compressed
@@ -125,7 +135,8 @@ def _find_page_externals(client_path, source_path, dlevel=plDebug.kDLNone):
         result.append((Path("dat", f"{page_info.age}.csv"), 0))
 
     for i in itertools.chain(*map(get_keys, movie_idxes)):
-        result.append((Path(i.object.movieName), 0))
+        movie = read_pko(i)
+        result.append((Path(movie.movieName), 0))
 
     return result
 
