@@ -1,0 +1,80 @@
+#    This file is part of HuruDist
+#
+#    HuruDist is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    HuruDist is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with HuruDist.  If not, see <http://www.gnu.org/licenses/>.
+
+import logging
+from pathlib import Path
+import subprocess
+import sys
+
+def find_python_exe(major=2, minor=7):
+    def _find_python_reg(py_version):
+        import winreg
+        subkey_name = "Software\\Python\\PythonCore\\{}.{}\\InstallPath".format(*py_version)
+        for reg_key in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                python_dir = winreg.QueryValue(reg_key, subkey_name)
+            except FileNotFoundError:
+                continue
+            else:
+                return Path(python_dir, "python.exe")
+        return None
+
+    # Maybe, someday, this will be true...
+    if sys.version_info[:2] == (major, minor):
+        return sys.executable
+
+    # If we're on Windows, we can try looking in the registry...
+    if sys.platform == "win32":
+        py_exe = None
+        for i in range(minor, 0, -1):
+            py_exe = _find_python_reg((major, i))
+            if py_exe:
+                logging.debug(f"Found Python {major}.{i}: {py_exe}")
+                return py_exe
+
+    # Ok, now we try using some posix junk...
+    args = ("command", "-v", f"python{major}.{minor}")
+    result = subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8")
+    if result.returncode == 0:
+        logging.debug(f"Found Python {major}.{minor}: {result.stdout}")
+        return result.stdout
+    args = ("command", "-v", f"python{major}")
+    result = subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8")
+    if result.returncode == 0:
+        logging.debug(f"Found Python {major}: {result.stdout}")
+        return result.stdout
+
+    # You win, I give up.
+    return None
+
+def find_python2_tools():
+    tools_path = Path(__file__).parent.joinpath("py2tools.py")
+    return tools_path
+
+def get_droid_key(droid_key):
+    if isinstance(droid_key, str):
+        droid_key = int(droid_key, 16)
+    assert isinstance(droid_key, int)
+    try:
+        buf = droid_key.to_bytes(length=16, byteorder="big")
+    except OverflowError:
+        raise AssetError("The droid key should be a 128-byte integer")
+    else:
+        key = []
+        key.append(int.from_bytes(buf[0:4], byteorder="big"))
+        key.append(int.from_bytes(buf[4:8], byteorder="big"))
+        key.append(int.from_bytes(buf[8:12], byteorder="big"))
+        key.append(int.from_bytes(buf[12:16], byteorder="big"))
+    return key

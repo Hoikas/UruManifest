@@ -20,12 +20,14 @@ import gzip
 from hashlib import md5
 import itertools
 import logging
+from pathlib import Path
 from PyHSPlasma import *
 import shutil
 import tempfile
 
 from assets import Asset, AssetError
 from constants import *
+import utils
 
 _BUFFER_SIZE = 10 * 1024 * 1024
 
@@ -143,23 +145,11 @@ def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key)
     logging.info("Encrypting assets...")
 
     # libHSPlasma wants the droid key as a sequence of 16-bit integers
-    if isinstance(droid_key, str):
-        droid_key = int(droid_key, 16)
-    assert isinstance(droid_key, int)
-    try:
-        buf = droid_key.to_bytes(length=16, byteorder="big")
-    except OverflowError:
-        raise AssetError("The droid key should be a 128-byte integer")
-    else:
-        key = []
-        key.append(int.from_bytes(buf[0:4], byteorder="big"))
-        key.append(int.from_bytes(buf[4:8], byteorder="big"))
-        key.append(int.from_bytes(buf[8:12], byteorder="big"))
-        key.append(int.from_bytes(buf[12:16], byteorder="big"))
+    key = utils.get_droid_key(droid_key)
 
     for client_path, staged_asset in staged_assets.items():
         desired_crypt = crypt_types.get(client_path.suffix.lower())
-        if desired_crypt is None:
+        if desired_crypt is None or staged_asset.flags & ManifestFlags.dont_encrypt:
             continue
 
         source_asset = source_assets[client_path]

@@ -86,6 +86,7 @@ class ManifestFlags(enum.IntFlag):
     python_file_mod = (1<<16)
     script = (1<<17)
     dirty = (1<<18)
+    dont_encrypt = (1<<19)
 
 
 naughty_path_sequences = {"..", "/", "\\"}
@@ -94,6 +95,14 @@ patcher_lut = {
     "external": "UruLauncher.exe",
     "internal": "plUruLauncher.exe",
 }
+
+@enum.unique
+class PfmGlue(enum.IntEnum):
+    indeed = py2constants.PFM_INDEED
+    not_a_modifier = py2constants.PFM_NOT_A_MODIFIER
+    no_class = py2constants.PFM_NO_CLASS
+    ast_crashed = py2constants.PFM_AST_CRASHED
+
 
 @enum.unique
 class PyToolsResultCodes(enum.IntEnum):

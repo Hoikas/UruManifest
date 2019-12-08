@@ -28,6 +28,7 @@ from config import dump_default_config, read_config
 import commit
 import dependencies
 import manifest, dirtsand
+import plasma_python
 
 program_description = "Uru Manifest Generator"
 main_parser = argparse.ArgumentParser(description=program_description)
@@ -60,6 +61,9 @@ def generate(args):
         game_data_path = config.getindirpath("source", "data_path")
         game_scripts_path = config.getindirpath("source", "scripts_path")
         gather_path = config.getindirpathopt("source", "gather_path")
+        droid_key = config.get("server", "droid_key")
+        py_version = (config.getint("python", "major"), config.getint("python", "minor"))
+        py_exe = config.getinfilepathopt("python", "path")
     except ValueError as e:
         # reraise as AssetError so config errors look sane.
         raise assets.AssetError(f"Config problem: {e}")
@@ -80,7 +84,9 @@ def generate(args):
         if args.dry_run:
             list_path, mfs_path = out_path, out_path
 
-        commit.encrypt_staged_assets(source_assets, staged_assets, temp_path, config["server"]["droid_key"])
+        plasma_python.process(source_assets, staged_assets, temp_path, droid_key, py_exe, py_version)
+
+        commit.encrypt_staged_assets(source_assets, staged_assets, temp_path, droid_key)
         commit.hash_staged_assets(source_assets, staged_assets, ncpus)
         commit.find_dirty_assets(cached_db.assets, staged_assets)
 

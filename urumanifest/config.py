@@ -34,6 +34,12 @@ _defaults = {
         "manifests": _ConfigItem("~/uru/output/filesrv"),
     },
 
+    "python": {
+        "major": _ConfigItem("2", "Major version of the Python interpreter used by the game client."),
+        "minor": _ConfigItem("7", "Minor version of the Python interpreter used by the game client."),
+        "path": _ConfigItem("", "Path to the Python interpreted used by the game client."),
+    },
+
     "server": {
         "droid_key": _ConfigItem("31415926535897932384626433832795",
             "64-byte integer hex string used to encrypt the client Python and SDL."),
@@ -74,6 +80,7 @@ def _get_path(value, must_exist=None, is_dir=None, mkdir=False):
 
 _converters = {
     "path": functools.partial(_get_path, must_exist=True),
+    "infilepathopt": functools.partial(_get_path, must_exist=False, is_dir=False),
     "indirpath": functools.partial(_get_path, must_exist=True, is_dir=True),
     "indirpathopt": functools.partial(_get_path, must_exist=False, is_dir=True),
     "outdirpath": functools.partial(_get_path, must_exist=False, is_dir=True, mkdir=True),
