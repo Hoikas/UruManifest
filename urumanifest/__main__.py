@@ -111,10 +111,15 @@ if __name__ == "__main__":
         level = logging.DEBUG
     else:
         level = logging.INFO
-    logging.basicConfig(format="[%(asctime)s] %(levelname)s: %(message)s", level=level)
+
+    logging_kwargs = {}
+    logging_kwargs["format"] = "[%(asctime)s] %(levelname)s: %(message)s"
+    logging_kwargs["level"] = level
     if getattr(args.log_file, "name", None):
-        handler = logging.FileHandler(args.log_file.with_suffix(".log"), mode="w")
-        logging.getLogger().addHandler(handler)
+        file_handler = logging.FileHandler(args.log_file.with_suffix(".log"), mode="w")
+        stream_handler = logging.StreamHandler()
+        logging_kwargs["handlers"] = (file_handler, stream_handler)
+    logging.basicConfig(**logging_kwargs)
     logging.debug(f"{program_description} __main__...")
     logging.trace("harro!")
 
