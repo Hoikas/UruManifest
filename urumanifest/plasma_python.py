@@ -120,11 +120,13 @@ def _compyle_all(source_assets, staged_assets, py_exe=None, py_version=(2, 7), n
                         pass
 
     # Find python2-compatible schtuff
-    if not py_exe or not py_exe.is_file():
-        py_exe = utils.find_python_exe(*py_version)
-    else:
+    if py_exe and py_exe.is_file() and utils.check_python_version(py_exe, py_version):
         logging.debug(f"Using configured Python executable: {py_exe}")
-    if not py_exe or not py_exe.exists():
+    else:
+        py_exe = utils.find_python_exe(py_version)
+        if not utils.check_python_version(py_exe, py_version):
+            py_exe = None
+    if not py_exe:
         logging.critical(f"Could not find Python {py_version[0]}.{py_version[1]}")
         return
     py_tools_path = utils.find_python2_tools()

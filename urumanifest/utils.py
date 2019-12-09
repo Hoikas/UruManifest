@@ -18,7 +18,28 @@ from pathlib import Path
 import subprocess
 import sys
 
-def find_python_exe(major=2, minor=7):
+def check_python_version(py_exe, py_version=(2,7)):
+    logging.debug(f"Checking Python interpreter version: {py_exe}")
+    if not py_exe or not py_exe.is_file():
+        logging.debug("Non-file input")
+        return False
+
+    args = (str(py_exe), "-V")
+    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="ascii")
+    if result.returncode == 0:
+        logging.trace(f"{py_exe}: {result.stdout}")
+
+        expected_version = f"Python {py_version[0]}.{py_version[1]}"
+        result_version = result.stdout.strip()
+        if not result_version.startswith(expected_version):
+            logging.error(f"Python interpreter '{py_exe}' is wrong version--expected '{expected_version}' got '{result_version}'")
+            return False
+        return True
+    else:
+        logging.debug("Nonzero returncode")
+        return False
+
+def find_python_exe(py_version=(2, 7)):
     def _find_python_reg(py_version):
         import winreg
         subkey_name = "Software\\Python\\PythonCore\\{}.{}\\InstallPath".format(*py_version)
@@ -32,8 +53,9 @@ def find_python_exe(major=2, minor=7):
         return None
 
     # Maybe, someday, this will be true...
-    if sys.version_info[:2] == (major, minor):
+    if sys.version_info[:2] == py_version:
         return sys.executable
+    major, minor = py_version
 
     # If we're on Windows, we can try looking in the registry...
     if sys.platform == "win32":
