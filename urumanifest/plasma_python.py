@@ -209,7 +209,7 @@ def _package(source_assets, staged_assets, module_code, output_path, droid_key):
         data_offset += len(compyled_code)
 
     stream = plEncryptedStream(pvMoul)
-    stream.setKey(utils.get_droid_key(droid_key))
+    stream.setKey(droid_key)
     with stream.open(pak_source_path, fmCreate, plEncryptedStream.kEncDroid):
         stream.writeInt(len(pyc_info))
         for module_name, data_offset, compyled_code in pyc_info:

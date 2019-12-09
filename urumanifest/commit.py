@@ -27,7 +27,6 @@ import tempfile
 
 from assets import Asset, AssetError
 from constants import *
-import utils
 
 _BUFFER_SIZE = 10 * 1024 * 1024
 
@@ -144,9 +143,6 @@ def find_dirty_assets(cached_assets, staged_assets):
 def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key):
     logging.info("Encrypting assets...")
 
-    # libHSPlasma wants the droid key as a sequence of 16-bit integers
-    key = utils.get_droid_key(droid_key)
-
     for client_path, staged_asset in staged_assets.items():
         desired_crypt = crypt_types.get(client_path.suffix.lower())
         if desired_crypt is None or staged_asset.flags & ManifestFlags.dont_encrypt:
@@ -170,7 +166,7 @@ def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             with plEncryptedStream().open(out_path, fmCreate, desired_crypt) as out_stream:
                 if desired_crypt == plEncryptedStream.kEncDroid:
-                    out_stream.setKey(key)
+                    out_stream.setKey(droid_key)
                 with source_asset.source_path.open("rb") as in_stream:
                     _io_loop(in_stream, out_stream.write)
 

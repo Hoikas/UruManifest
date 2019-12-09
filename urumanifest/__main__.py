@@ -27,8 +27,9 @@ import assets
 from config import dump_default_config, read_config
 import commit
 import dependencies
-import manifest, dirtsand
+import manifest, dirtsand, moss
 import plasma_python
+import utils
 
 program_description = "Uru Manifest Generator"
 main_parser = argparse.ArgumentParser(description=program_description)
@@ -61,7 +62,7 @@ def generate(args):
         game_data_path = config.getindirpath("source", "data_path")
         game_scripts_path = config.getindirpath("source", "scripts_path")
         gather_path = config.getindirpathopt("source", "gather_path")
-        droid_key = config.get("server", "droid_key")
+        droid_key = utils.get_droid_key(config.get("server", "droid_key"))
         py_version = (config.getint("python", "major"), config.getint("python", "minor"))
         py_exe = config.getinfilepathopt("python", "path")
     except ValueError as e:
@@ -94,10 +95,12 @@ def generate(args):
         secure_manifests, secure_lists = commit.make_secure_downloads(staged_assets, config["server"]["secure_manifest"])
         manifests = commit.merge_manifests(age_manifests, client_manifests, secure_manifests)
 
-        commit.compress_dirty_assets(manifests, cached_db.assets, source_assets, staged_assets, mfs_path, ncpus)
+        commit.compress_dirty_assets(manifests, cached_db.assets, source_assets, staged_assets,
+                                     mfs_path, ncpus)
         commit.copy_secure_assets(secure_lists, source_assets, staged_assets, list_path)
 
-        assets.save_asset_database(staged_assets, manifests, secure_lists, mfs_path, list_path, db_type)
+        assets.save_asset_database(staged_assets, manifests, secure_lists, mfs_path, list_path,
+                                   db_type, droid_key)
 
     return True
 

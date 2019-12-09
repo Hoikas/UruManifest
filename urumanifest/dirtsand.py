@@ -34,7 +34,7 @@ class Dirtsand(manifest.ManifestDB):
             except:
                 logging.error(f"Malformed list filename '{i.name}'")
             else:
-                value[(directory_name, extension)] = cls.read_list(i)
+                value[(directory_name, extension)] = tuple(cls.read_list(i))
         return value
 
     @classmethod
@@ -61,8 +61,8 @@ class Dirtsand(manifest.ManifestDB):
                     yield entry
 
     @classmethod
-    def write_list(cls, path, key, entries):
-        out_path = path.joinpath("{0}_{1}.list".format(*key))
+    def write_list(cls, path, name, entries):
+        out_path = path.joinpath(name).with_suffix(".list")
         logging.debug(f"Writing secure list: {out_path}")
         with out_path.open("w") as f:
             for i in entries:
@@ -70,6 +70,11 @@ class Dirtsand(manifest.ManifestDB):
                 ln = f"{fn},{i.file_size}"
                 logging.trace(ln)
                 f.write(f"{ln}\n")
+
+    @classmethod
+    def write_lists(cls, path, droid_key, contents):
+        for key, entries in contents.items():
+            cls.write_list(path, "{0}_{1}.list".format(*key), entries)
 
     @classmethod
     def read_manifest(cls, path):

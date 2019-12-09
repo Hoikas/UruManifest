@@ -17,7 +17,6 @@ import abc
 from collections import defaultdict
 from dataclasses import dataclass
 import functools
-import itertools
 import logging
 from pathlib import Path
 import pprint
@@ -61,7 +60,7 @@ class ManifestDB(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def write_list(cls, path, key, entries):
+    def write_list(cls, path, name, entries):
         pass
 
     @classmethod

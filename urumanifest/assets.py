@@ -210,7 +210,7 @@ def merge_asset_dicts(prebuilts, gathers):
     logging.debug(f"Total known assets: {len(assets)}")
     return assets
 
-def save_asset_database(staged_assets, manifests, lists, mfs_path, list_path, db_type):
+def save_asset_database(staged_assets, manifests, lists, mfs_path, list_path, db_type, droid_key):
     logging.info("Saving asset database...")
 
     def iter_manifest(mfs_name):
@@ -232,5 +232,6 @@ def save_asset_database(staged_assets, manifests, lists, mfs_path, list_path, db
     db_cls = manifest.ManifestDB.get(db_type)
     for i in manifests.keys():
         db_cls.write_manifest(mfs_path, i, iter_manifest(i))
-    for i in lists.keys():
-        db_cls.write_list(list_path, i, iter_secure_list(i))
+
+    lists_contents = { key: tuple(iter_secure_list(key)) for key in lists.keys() }
+    db_cls.write_lists(list_path, droid_key, lists_contents)
