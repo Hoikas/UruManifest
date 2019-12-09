@@ -101,12 +101,19 @@ def _is_pfm(py_file_path, legacy=False):
         v.visit(ast_node)
     return v.result
 
-def compyle(py_file_path, py_glue_path=None, module_name="<string>", force_append_glue=False):
+def compyle(py_file_path, py_glue_path=None, module_name=u"<string>", force_append_glue=False):
     result = {}
 
     is_pfm = _is_pfm(py_file_path)
     result[u"pfm"] = is_pfm
     append_glue = is_pfm == PFM_INDEED or force_append_glue
+
+    # Grumble about stupid unpickling here...
+    encoding = sys.getfilesystemencoding()
+    py_file_path = py_file_path.encode(encoding)
+    if py_glue_path:
+        py_glue_path = py_glue_path.encode(encoding)
+    module_name = module_name.encode("utf-8")
 
     try:
         py_source_code = _read_py_source(py_file_path)
@@ -151,7 +158,17 @@ def _handle_command():
         command = _commands.get(code.pop(u"cmd"))
         if command:
             args = code.pop(u"args", [])
-            result = command(*args, **code)
+
+            # For some stupid ass reason, we can't unpickle Py3 bytes objects in Python 2.3, so
+            # everything is a flipping unicode object now. SIGH.
+            kwargs = {}
+            if sys.version_info[0] == 2:
+                iter_items = code.iteritems
+            else:
+                iter_items = code.items
+            for key, value in iter_items():
+                kwargs[key.encode("utf-8")] = value
+            result = command(*args, **kwargs)
         else:
             result = { u"returncode": TOOLS_INVALID_COMMAND }
     except:

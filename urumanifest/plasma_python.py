@@ -17,7 +17,6 @@ from collections import Counter
 import concurrent.futures
 import functools
 import logging
-import os
 from pathlib import Path
 try:
     import cPickle as pickle
@@ -58,12 +57,17 @@ def _compyle_file(py_exe, py_tools_path, py_file_path, py_glue_path, module_name
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             universal_newlines=False)
 
+    # Danger: do not try to pickle a bytes object and send it to Python <2.6. Apparently this chokes
+    # because some module does not have an `encode` function. And here I am likw WTF, mate. A Python 3
+    # bytes object is just an immutable Python 2 str... And I explicitly asked for a backwards compat
+    # pickling protocol...
     command = {}
     command["cmd"] = "compyle"
-    command["py_file_path"] = os.fsencode(py_file_path)
-    command["py_glue_path"] = os.fsencode(py_glue_path)
-    command["module_name"] = module_name.encode("utf-8")
+    command["py_file_path"] = str(py_file_path)
+    command["py_glue_path"] = str(py_glue_path)
+    command["module_name"] = module_name
     command["force_append_glue"] = is_pfm
+    # NOTE: binary protocols can lead to unexpected EOFs in Python 2...
     buf = pickle.dumps(command, 0)
 
     # Whoosh... off it goes...
