@@ -41,7 +41,7 @@ log_group.add_argument("-d", "--debug", action="store_true", help="print debug l
 log_group.add_argument("-q", "--quiet", action="store_true", help="only print critical information")
 log_group.add_argument("-v", "--verbose", action="store_true", help="print trace-level log output")
 
-sub_parsers = main_parser.add_subparsers(title="command", dest="command", required=True)
+sub_parsers = main_parser.add_subparsers(title="command", dest="command")
 dumpconfig_parser = sub_parsers.add_parser("dumpconfig")
 
 generate_parser = sub_parsers.add_parser("generate")
@@ -137,7 +137,8 @@ if __name__ == "__main__":
 
         # Go go go
         try:
-            result = globals()[args.command](args)
+            cmdcall = globals().get(args.command)
+            result = cmdcall(args) if cmdcall else False
         except assets.AssetError as e:
             logging.error(str(e))
             raise
