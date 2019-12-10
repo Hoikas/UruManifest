@@ -66,11 +66,11 @@ _defaults = {
 def _get_path(value, must_exist=None, is_dir=None, mkdir=False):
     assert (must_exist is not None)
 
-    p = Path(value)
+    p = Path(value).expanduser()
     if must_exist:
         exists = p.is_dir if is_dir else p.exists
         if not exists():
-            raise ValueError(f"Path '{value}' does not exist.")
+            raise ValueError(f"Path '{p}' does not exist.")
     elif mkdir:
         if is_dir is True:
             p.mkdir(parents=True, exist_ok=True)
