@@ -39,7 +39,7 @@ def check_python_version(py_exe, py_version=(2,7)):
         logging.debug("Nonzero returncode")
         return False
 
-def find_python_exe(py_version=(2, 7)):
+def find_python_exe(py_version=(2, 7)) -> Path:
     def _find_python_reg(py_version):
         import winreg
         subkey_name = "Software\\Python\\PythonCore\\{}.{}\\InstallPath".format(*py_version)
@@ -72,13 +72,13 @@ def find_python_exe(py_version=(2, 7)):
     result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, encoding=encoding)
     if result.returncode == 0:
         logging.debug(f"Found Python {major}.{minor}: {result.stdout}")
-        return result.stdout.strip()
+        return Path(result.stdout.strip())
 
     cmd = f"command -v python{major}"
     result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, encoding=encoding)
     if result.returncode == 0:
         logging.debug(f"Found Python {major}: {result.stdout}")
-        return result.stdout.strip()
+        return Path(result.stdout.strip())
 
     # You win, I give up.
     return None
