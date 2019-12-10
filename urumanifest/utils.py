@@ -67,16 +67,18 @@ def find_python_exe(py_version=(2, 7)):
                 return py_exe
 
     # Ok, now we try using some posix junk...
-    args = ("command", "-v", f"python{major}.{minor}")
-    result = subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8")
+    cmd = f"command -v python{major}.{minor}"
+    encoding = sys.stdout.encoding
+    result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, encoding=encoding)
     if result.returncode == 0:
         logging.debug(f"Found Python {major}.{minor}: {result.stdout}")
-        return result.stdout
-    args = ("command", "-v", f"python{major}")
-    result = subprocess.run(args, stdout=subprocess.PIPE, encoding="utf-8")
+        return result.stdout.strip()
+
+    cmd = f"command -v python{major}"
+    result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, encoding=encoding)
     if result.returncode == 0:
         logging.debug(f"Found Python {major}: {result.stdout}")
-        return result.stdout
+        return result.stdout.strip()
 
     # You win, I give up.
     return None
