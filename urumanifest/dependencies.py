@@ -90,20 +90,22 @@ def find_age_dependencies(source_assets, staged_assets, ncpus=None):
 def _find_page_externals(client_path, source_path, dlevel=plDebug.kDLNone):
     def read_pko(key):
         koStub = key.object
-        assert isinstance(koStub, hsKeyedObjectStub)
-
-        # This is somewhat inefficient WRT copying data, but better than trying to handle all
-        # the doggong DSpan reading...
-        stream = hsRAMStream(pvMoul)
-        stream.writeShort(koStub.stub.ClassIndexVer(pvMoul))
-        stream.write(koStub.stub.getData())
-        stream.rewind()
-        # important to use a new manager -- the old one will crash...
-        return plResManager(pvMoul).ReadCreatable(stream)
+        if isinstance(koStub, hsKeyedObjectStub):
+            # This is somewhat inefficient WRT copying data, but better than trying to handle all
+            # the doggong DSpan reading...
+            stream = hsRAMStream(pvMoul)
+            stream.writeShort(koStub.stub.ClassIndexVer(pvMoul))
+            stream.write(koStub.stub.getData())
+            stream.rewind()
+            # important to use a new manager -- the old one will crash...
+            return plResManager(pvMoul).ReadCreatable(stream)
+        return koStub
 
     plDebug.Init(dlevel)
     mgr = plResManager()
-    page_info = mgr.ReadPage(source_path, True)
+    ## FIXME: We would prefer to stub the keyed objects and read them in on demand, but that seems
+    # to cause safe strings to become corrupted on Linux.
+    page_info = mgr.ReadPage(source_path)
 
     pfm_idx = plFactory.ClassIndex("plPythonFileMod")
     sfx_idx = plFactory.ClassIndex("plSoundBuffer")
