@@ -34,16 +34,8 @@ def _build_module_name(script_client_path, source_assets):
     # Every directory containing an __init__.py file is a module. So, we need to scan backwards
     # to see what this script's module name is. Example: the KI's PFM `xKI` module will import
     # the `ki` module (ki/__init__.py) which has submodules `ki.xKIChat`, etc.
-    base_py_path = Path("Python")
-    if script_client_path.stem == "__init__":
-        working_path = script_client_path.parent
-        if working_path == base_py_path:
-            logging.error("Root-level __init__.py will not be in packed python!")
-            return
-    else:
-        working_path = script_client_path
-
-    module_name = working_path.stem
+    base_py_path, working_path = Path("Python"), script_client_path
+    module_name = working_path.name
     while working_path != base_py_path:
         working_path = working_path.parent
         working_init_path = working_path.joinpath("__init__.py")
@@ -53,7 +45,7 @@ def _build_module_name(script_client_path, source_assets):
     return module_name
 
 def _compyle_file(py_exe, py_tools_path, py_file_path, py_glue_path, module_name, is_pfm):
-    proc = subprocess.Popen((str(py_exe), str(py_tools_path)),
+    proc = subprocess.Popen((str(py_exe), "-OO", str(py_tools_path)),
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             universal_newlines=False)
 
