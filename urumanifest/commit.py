@@ -31,16 +31,14 @@ from constants import *
 _BUFFER_SIZE = 10 * 1024 * 1024
 
 def _compress_asset(client_path, source_path, output_path):
-    h = md5()
-    def do_io(buf):
-        h.update(buf)
-        gz_stream.write(buf)
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with source_path.open("rb") as in_stream:
         with output_path.open("wb") as out_stream:
             gz_stream = gzip.GzipFile(str(client_path), "wb", fileobj=out_stream)
-            _io_loop(in_stream, do_io)
+            _io_loop(in_stream, out_stream.write)
+    with output_path.open("rb") as in_stream:
+        h = md5()
+        _io_loop(in_stream, h.update)
     return h.hexdigest(), output_path.stat().st_size
 
 def _copy_asset(args):
