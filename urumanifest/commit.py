@@ -33,8 +33,7 @@ _BUFFER_SIZE = 10 * 1024 * 1024
 def _compress_asset(client_path, source_path, output_path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with source_path.open("rb") as in_stream:
-        with output_path.open("wb") as out_stream:
-            gz_stream = gzip.GzipFile(str(client_path), "wb", fileobj=out_stream)
+        with gzip.open(output_path, "wb") as gz_stream:
             _io_loop(in_stream, gz_stream.write)
     with output_path.open("rb") as in_stream:
         h = md5()
