@@ -45,7 +45,9 @@ sub_parsers = main_parser.add_subparsers(title="command", dest="command")
 dumpconfig_parser = sub_parsers.add_parser("dumpconfig")
 
 generate_parser = sub_parsers.add_parser("generate")
-generate_parser.add_argument("--dry-run", action="store_true", default=False)
+method_group = generate_parser.add_mutually_exclusive_group()
+method_group.add_argument("--dry-run", action="store_true", default=False, help="don't produce any output")
+method_group.add_argument("--force", action="store_true", default=False, help="force regeneration of all files")
 generate_parser.add_argument("--threads", type=int, help="maximum worker thread count", default=0)
 
 def dumpconfig(args):
@@ -83,7 +85,7 @@ def generate(args):
     with tempfile.TemporaryDirectory() as td:
         temp_path = Path(td)
         if args.dry_run:
-            list_path, mfs_path = out_path, out_path
+            list_path, mfs_path = temp_path, temp_path
 
         plasma_python.process(source_assets, staged_assets, temp_path, droid_key, py_exe, py_version)
 
@@ -96,8 +98,9 @@ def generate(args):
         manifests = commit.merge_manifests(age_manifests, client_manifests, secure_manifests)
 
         commit.compress_dirty_assets(manifests, cached_db.assets, source_assets, staged_assets,
-                                     mfs_path, ncpus)
-        commit.copy_secure_assets(secure_lists, source_assets, staged_assets, list_path)
+                                     mfs_path, args.force, ncpus)
+        if not args.dry_run:
+            commit.copy_secure_assets(secure_lists, source_assets, staged_assets, list_path)
 
         assets.save_asset_database(staged_assets, manifests, secure_lists, mfs_path, list_path,
                                    db_type, droid_key)

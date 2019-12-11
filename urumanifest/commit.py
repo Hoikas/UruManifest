@@ -62,7 +62,7 @@ def _io_loop(in_stream, out_func):
             break
         out_func(buf)
 
-def compress_dirty_assets(manifests, cached_assets, source_assets, staged_assets, output_path, ncpus=None):
+def compress_dirty_assets(manifests, cached_assets, source_assets, staged_assets, output_path, force, ncpus=None):
     logging.info("Compressing dirty assets...")
 
     def on_compress(asset, future):
@@ -93,7 +93,7 @@ def compress_dirty_assets(manifests, cached_assets, source_assets, staged_assets
             # supports gzipped downloads. Sigh...
             staged_asset.flags |= ManifestFlags.file_gzipped
 
-            if staged_asset.flags & ManifestFlags.dirty:
+            if staged_asset.flags & ManifestFlags.dirty or force:
                 future = executor.submit(_compress_asset, client_path,
                                          source_asset.source_path,
                                          asset_output_path)
@@ -132,11 +132,12 @@ def find_dirty_assets(cached_assets, staged_assets):
         logging.trace(f"{staged_asset.file_name}: {logstr}")
 
     cached_set, staged_set = set(cached_assets.keys()), set(staged_assets.keys())
+    all_assets = set(itertools.chain(cached_assets.keys(), staged_assets.keys()))
     dirty_assets = set((i.file_name for i in staged_assets.values() if i.flags & ManifestFlags.dirty))
     added_assets = staged_set - cached_set
     deleted_assets = cached_set - staged_set
     changed_assets = dirty_assets - added_assets - deleted_assets
-    logging.debug(f"{len(dirty_assets)} dirty assets: {len(added_assets)} added, {len(changed_assets)} changed, {len(deleted_assets)} deleted.")
+    logging.info(f"{len(dirty_assets)} assets dirty of {len(all_assets)}: {len(added_assets)} added, {len(changed_assets)} changed, {len(deleted_assets)} deleted.")
 
 def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key):
     logging.info("Encrypting assets...")
