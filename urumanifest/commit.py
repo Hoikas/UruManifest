@@ -35,7 +35,7 @@ def _compress_asset(client_path, source_path, output_path):
     with source_path.open("rb") as in_stream:
         with output_path.open("wb") as out_stream:
             gz_stream = gzip.GzipFile(str(client_path), "wb", fileobj=out_stream)
-            _io_loop(in_stream, out_stream.write)
+            _io_loop(in_stream, gz_stream.write)
     with output_path.open("rb") as in_stream:
         h = md5()
         _io_loop(in_stream, h.update)
