@@ -101,6 +101,7 @@ def generate(args):
                                      mfs_path, args.force, ncpus)
         if not args.dry_run:
             commit.copy_secure_assets(secure_lists, source_assets, staged_assets, list_path)
+        commit.nuke_unstaged_assets(cached_db, staged_assets, mfs_path, list_path)
 
         assets.save_asset_database(staged_assets, manifests, secure_lists, mfs_path, list_path,
                                    db_type, droid_key)

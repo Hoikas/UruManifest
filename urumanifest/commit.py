@@ -27,6 +27,7 @@ import tempfile
 
 from assets import Asset, AssetError
 from constants import *
+import manifest
 
 _BUFFER_SIZE = 10 * 1024 * 1024
 
@@ -224,3 +225,35 @@ def merge_manifests(age_manifests, client_manifests, secure_manifests):
     manifests.update(client_manifests)
     manifests.update(secure_manifests)
     return manifests
+
+def nuke_unstaged_assets(cached_db, staged_assets, mfs_path, list_path):
+    logging.info("Nuking unstaged assets...")
+
+    cached_assets, manifests, lists = cached_db
+    deleted_assets = frozenset(cached_assets.keys()) - frozenset(staged_assets.keys())
+
+    def unlink_asset(client_path):
+        logging.trace(f"Unlinking asset '{client_path}'")
+        if client_path.suffix.lower() == ".prp":
+            logging.error(f"Unlinking page '{client_path.name}' -- this may cause issues on legacy clients!")
+
+        deletions = 0
+        for entry in itertools.chain(*manifests.values(), *lists.values()):
+            if entry.file_name == client_path:
+                deletions += unlink_entry(entry)
+        return deletions
+
+    def unlink_entry(entry):
+        if isinstance(entry, manifest.ListEntry):
+            asset_path = list_path.joinpath(entry.file_name)
+        elif isinstance(entry, manifest.ManifestEntry):
+            asset_path = mfs_path.joinpath(entry.download_name)
+        else:
+            raise TypeError()
+        if asset_path.is_file():
+            asset_path.unlink()
+            return 1
+        return 0
+
+    total_deletions = sum(map(unlink_asset, deleted_assets))
+    logging.debug(f"Unlinked {total_deletions} instances of {len(deleted_assets)} unstaged assets.")
