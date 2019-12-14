@@ -117,7 +117,8 @@ def generate(args):
         if not args.dry_run:
             commit.copy_secure_assets(secure_lists, source_assets, staged_assets, list_path)
         commit.nuke_unstaged_assets(cached_db, staged_assets, mfs_path, list_path)
-
+        assets.nuke_dead_manifests(cached_db.manifests, cached_db.lists, manifests, secure_lists,
+                                   mfs_path, list_path, db_type)
         assets.save_asset_database(staged_assets, manifests, secure_lists, mfs_path, list_path,
                                    db_type, droid_key)
 

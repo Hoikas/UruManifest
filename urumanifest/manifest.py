@@ -50,6 +50,16 @@ class ManifestDB(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
+    def delete_manifests(cls, mfs_path, *manifests):
+        pass
+
+    @classmethod
+    @abc.abstractmethod
+    def delete_lists(cls, list_path, *lists):
+        pass
+
+    @classmethod
+    @abc.abstractmethod
     def load_db(cls, mfs_path, list_path):
         pass
 

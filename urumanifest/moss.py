@@ -27,6 +27,22 @@ _utf16 = codecs.lookup("utf-16_le")
 
 class MOSS(manifest.ManifestDB):
     @classmethod
+    def delete_manifests(cls, path, *manifests):
+        for name in manifests:
+            out_path = path.joinpath(name).with_suffix(".mbm")
+            if out_path.is_file():
+                logging.debug(f"Deleting manifest '{out_path.name}'")
+                out_path.unlink()
+
+    @classmethod
+    def delete_lists(cls, path, *lists):
+        for name, _ in lists:
+            out_path = path.joinpath(name).with_suffix(".mbam")
+            if out_path.is_file():
+                logging.debug(f"Deleting secure list '{out_path.name}'")
+                out_path.unlink()
+
+    @classmethod
     def load_db(cls, mfs_path, list_path): 
         manifests = { i.stem: list(cls.read_manifest(i)) for i in mfs_path.glob("*.mbm") }
         lists = cls._read_lists(list_path)

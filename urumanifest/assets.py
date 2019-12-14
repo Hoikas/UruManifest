@@ -210,6 +210,19 @@ def merge_asset_dicts(prebuilts, gathers):
     logging.debug(f"Total known assets: {len(assets)}")
     return assets
 
+def nuke_dead_manifests(cached_manifests, cached_lists, staged_manifests, staged_lists,
+                        mfs_path, list_path, db_type):
+    logging.info("Nuking defunct database files...")
+
+    dead_mfs = frozenset(cached_manifests.keys()) - frozenset(staged_manifests.keys())
+    dead_lists = frozenset(cached_lists.keys()) - frozenset(staged_lists.keys())
+
+    db_cls = manifest.ManifestDB.get(db_type)
+    if dead_mfs:
+        db_cls.delete_manifests(mfs_path, *dead_mfs)
+    if dead_lists:
+        db_cls.delete_lists(list_path, *dead_lists)
+
 def save_asset_database(staged_assets, manifests, lists, mfs_path, list_path, db_type, droid_key):
     logging.info("Saving asset database...")
 
