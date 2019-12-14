@@ -41,7 +41,14 @@ log_group.add_argument("-d", "--debug", action="store_true", help="print debug l
 log_group.add_argument("-q", "--quiet", action="store_true", help="only print critical information")
 log_group.add_argument("-v", "--verbose", action="store_true", help="print trace-level log output")
 
-sub_parsers = main_parser.add_subparsers(title="command", dest="command")
+# Begin HAX: `required` argument for add_sub_parsers added in Python 3.7...
+_sub_parsers_call = functools.partial(main_parser.add_subparsers, title="command", dest="command")
+if (sys.version_info[0] == 3 and sys.version_info[1] >= 7) or sys.version_info[0] > 3:
+    sub_parsers = _sub_parsers_call(required=True)
+else:
+    sub_parsers = _sub_parsers_call()
+# End HAX
+
 dumpconfig_parser = sub_parsers.add_parser("dumpconfig")
 
 generate_parser = sub_parsers.add_parser("generate")
@@ -158,7 +165,11 @@ if __name__ == "__main__":
         # Go go go
         try:
             cmdcall = globals().get(args.command)
-            result = cmdcall(args) if cmdcall else False
+            if cmdcall:
+                result = cmdcall(args)
+            else:
+                logging.error("No command specified. Use `-h` to see help.")
+                result = False
         except assets.AssetError as e:
             logging.error(str(e))
             raise
