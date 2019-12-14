@@ -120,8 +120,9 @@ def find_dirty_assets(cached_assets, staged_assets):
 
     def iter_asset_hashes():
         for client_path, staged_asset in staged_assets.items():
-            cached_asset = cached_assets.get(client_path)
-            yield staged_asset, getattr(cached_asset, "file_hash", None), staged_asset.file_hash
+            if not staged_asset.flags & ManifestFlags.consumable:
+                cached_asset = cached_assets.get(client_path)
+                yield staged_asset, getattr(cached_asset, "file_hash", None), staged_asset.file_hash
 
     for staged_asset, cached_hash, staged_hash in iter_asset_hashes():
         dirty = cached_hash != staged_hash
@@ -130,9 +131,10 @@ def find_dirty_assets(cached_assets, staged_assets):
         logstr = "dirty" if dirty else "clean"
         logging.trace(f"{staged_asset.file_name}: {logstr}")
 
-    cached_set, staged_set = set(cached_assets.keys()), set(staged_assets.keys())
-    all_assets = set(itertools.chain(cached_assets.keys(), staged_assets.keys()))
-    dirty_assets = set((i.file_name for i in staged_assets.values() if i.flags & ManifestFlags.dirty))
+    cached_set = frozenset(cached_assets.keys())
+    staged_set = frozenset((cp for cp, sa in staged_assets.items() if not sa.flags & ManifestFlags.consumable))
+    all_assets = frozenset(itertools.chain(cached_set, staged_set))
+    dirty_assets = frozenset((cp for cp, sa in staged_assets.items() if sa.flags & ManifestFlags.dirty))
     added_assets = staged_set - cached_set
     deleted_assets = cached_set - staged_set
     changed_assets = dirty_assets - added_assets - deleted_assets
@@ -181,7 +183,7 @@ def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key)
 def hash_staged_assets(source_assets, staged_assets, ncpus=None):
     logging.info("Hashing all staged assets...")
     with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
-        args = ((i, source_assets[i].source_path) for i in staged_assets.keys())
+        args = ((cp, source_assets[cp].source_path) for cp, sa in staged_assets.items() if not sa.flags & ManifestFlags.consumable)
         for client_path, h, sz in executor.map(_hash_asset, args, chunksize=64):
             logging.trace(f"{client_path}: {h}")
             staged_asset = staged_assets[client_path]

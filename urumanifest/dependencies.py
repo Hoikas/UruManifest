@@ -118,7 +118,7 @@ def _find_page_externals(client_path, source_path, dlevel=plDebug.kDLNone):
     for i in get_keys(pfm_idx):
         pfm = read_pko(i)
         client_path = Path("Python", f"{pfm.filename}.py")
-        flags = ManifestFlags.python_file_mod | ManifestFlags.script
+        flags = ManifestFlags.python_file_mod | ManifestFlags.script | ManifestFlags.consumable
         result.append((client_path, flags))
 
     for i in get_keys(sfx_idx):
@@ -207,10 +207,10 @@ def find_script_dependencies(source_assets, staged_assets):
             if asset.flags & ManifestFlags.python_file_mod:
                 yield client_path, asset
 
-    def track_dependency(client_path):
+    def track_dependency(client_path, flags=0):
         logging.trace(client_path)
         staged_assets[client_path].file_name = client_path
-        staged_assets[client_path].flags |= ManifestFlags.script
+        staged_assets[client_path].flags |= ManifestFlags.script | flags
 
     logging.debug(f"Loading all SDL...")
     sdl_mgrs = _load_sdl_descriptors(source_assets)
@@ -242,7 +242,7 @@ def find_script_dependencies(source_assets, staged_assets):
     py_client_paths = (client_path for client_path in source_assets.keys()
                                    if client_path.suffix.lower() == ".py")
     for i in py_client_paths:
-        track_dependency(i)
+        track_dependency(i, ManifestFlags.consumable)
 
 def _find_script_sdl_dependencies(sdl_mgrs, descriptor_name, optional=False):
     def find_sdls(sdl_mgrs, descriptor_name, embedded_sdr=False, optional=False):
