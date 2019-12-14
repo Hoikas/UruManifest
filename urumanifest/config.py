@@ -30,14 +30,22 @@ class _ConfigItem:
 
 _defaults = {
     "output": {
-        "lists": _ConfigItem("~/uru/output/authsrv"),
-        "manifests": _ConfigItem("~/uru/output/filesrv"),
+        "lists": _ConfigItem("~/uru/output/authsrv",
+            "Directory to output legacy auth server \"secure downloads\". These are requested by\n"
+            "legacy clients and some tools (eg MoulKI). Note that MOSS uses a funky directory structure\n"
+            "for these downloads to allow different accounts to download different sets of data.\n"
+            "All clients should use the same Python and SDL files, therefore, it is expected that this\n"
+            "should be set to the subdirectory named \"default\" of the \"auth_download_dir\" specified\n"
+            "in moss.cfg."),
+
+        "manifests": _ConfigItem("~/uru/output/filesrv",
+            "Directory to output file server manifests and downloads."),
     },
 
     "python": {
         "major": _ConfigItem("2", "Major version of the Python interpreter used by the game client."),
         "minor": _ConfigItem("7", "Minor version of the Python interpreter used by the game client."),
-        "path": _ConfigItem("", "Path to the Python interpreted used by the game client."),
+        "path": _ConfigItem("", "Path to the Python interpreter used by the game client."),
     },
 
     "server": {
@@ -62,7 +70,8 @@ _defaults = {
 
     "source": {
         "data_path": _ConfigItem("~/uru/game_data",
-            "This is the path to the directory containing the game's avi, dat, and sfx subdirectories."),
+            "This is the path to the directory containing the game's avi, dat, and sfx subdirectories.\n"
+            "This typically points to the \"compiled\" subdirectory of the moul-assets repository."),
 
         "gather_path": _ConfigItem("~/uru/gather_data",
             "This is the path to the directory containing gather-build assets to include."),
@@ -97,10 +106,29 @@ _converters = {
     "outdirpath": functools.partial(_get_path, must_exist=False, is_dir=True, mkdir=True),
 }
 
+_header = """
+;    This file is part of UruManifest
+;
+;    UruManifest is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    UruManifest is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with UruManifest.  If not, see <http://www.gnu.org/licenses/>.
+
+"""
+
 def dump_default_config(config_path):
     with config_path.open("w") as fp:
+        fp.write(_header.lstrip())
         for section, values in _defaults.items():
-            fp.write(f"[{section}]\n")
+            fp.write(f"\n[{section}]\n\n")
             for option_name, option_value in values.items():
                 if option_value.comment:
                     for comment_line in option_value.comment.split("\n"):
