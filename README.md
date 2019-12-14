@@ -55,5 +55,5 @@ MOSS allows shipping different sets of "secure" files to different accounts. Thi
 #### Secure Manifest
 H-uru clients download the Python.pak and SDL files via the SecurePreloader file manifest. However, MOSS has a setting that may prevent clients from logging in if these files are not downloaded via the MOSS auth server. Therefore, you may need to set `server.secure_manifest` to `false` in the UruManifest configuation to work around this strange design decision in MOSS.
 
-### Game Configuration
+#### Game Configuration
 MOSS tries to be helpful to age creators by allowing the game server to load each age's SDL when the age starts. Unfortunately, the execution of this idea is fragile and makes the storage of SDL files extremely fragile. UruManifest will copy both the decrypted .age and .sdl to MOSS if the directories are given. For age files, you will want to set `server.age_directory` to the `age` subdirectory of the `game_data_dir`. For SDL, you will want to set the `server.sdl_directory` to the `SDL/common` subdirectory of the `game_data_dir`. Any other subdirectories should be removed. This will require that MOSS be restarted any time you run an update -- but you should never deploy an update while the server is running, anyway.
