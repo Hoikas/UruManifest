@@ -41,8 +41,17 @@ _defaults = {
     },
 
     "server": {
+        "age_directory": _ConfigItem("",
+            "Directory to copy the decrypted *.age files to for use by the server."),
+
         "droid_key": _ConfigItem("31415926535897932384626433832795",
             "64-byte integer hex string used to encrypt the client Python and SDL."),
+
+        "sdl_directory": _ConfigItem("",
+            "Directory to copy the decrypted *.sdl files to for use by the server.\n"
+            "Note that MOSS uses a funky directory structure that organizes SDLs into subdirectories...\n"
+            "The easiest way to work around this design flaw is to set this to the subdirectory named\n"
+            "\"SDL/common\" of the \"game_data_dir\" specified in moss.cfg."),
 
         "secure_manifest": _ConfigItem("true",
             "Should the \"so-called\" secure files be served over the filesrv? This allows the skipping of the\n"
@@ -65,6 +74,8 @@ _defaults = {
 
 def _get_path(value, must_exist=None, is_dir=None, mkdir=False):
     assert (must_exist is not None)
+    if not must_exist and not value:
+        return None
 
     p = Path(value).expanduser()
     if must_exist:

@@ -59,13 +59,19 @@ def generate(args):
 
     try:
         db_type = config.get("server", "type")
+
         mfs_path = config.getoutdirpath("output", "manifests")
         list_path = config.getoutdirpath("output", "lists")
+
         game_data_path = config.getindirpath("source", "data_path")
         game_scripts_path = config.getindirpath("source", "scripts_path")
         gather_path = config.getindirpathopt("source", "gather_path")
+
+        server_age_path = config.getoutdirpath("server", "age_directory")
         droid_key = utils.get_droid_key(config.get("server", "droid_key"))
+        server_sdl_path = config.getoutdirpath("server", "sdl_directory")
         make_preloader_mfs = config.getboolean("server", "secure_manifest")
+
         py_version = (config.getint("python", "major"), config.getint("python", "minor"))
         py_exe = config.getinfilepathopt("python", "path")
     except ValueError as e:
@@ -88,7 +94,15 @@ def generate(args):
         if args.dry_run:
             list_path, mfs_path = temp_path, temp_path
 
+            # dry-run forces these files to be copied for testing purposes
+            server_age_path = td.joinpath("server_age_files")
+            server_sdl_path = td.joinpath("server_sdl_files")
+
         plasma_python.process(source_assets, staged_assets, temp_path, droid_key, py_exe, py_version)
+
+        # Best to go ahead and copy the assets over to the server before anything is encrypted.
+        # That way, we don't spin-wash encrypt then decrypt.
+        commit.copy_server_assets(source_assets, staged_assets, server_age_path, server_sdl_path)
 
         commit.encrypt_staged_assets(source_assets, staged_assets, temp_path, droid_key)
         commit.hash_staged_assets(source_assets, staged_assets, ncpus)

@@ -57,7 +57,11 @@ def _hash_asset(args):
 
 def _io_loop(in_stream, out_func):
     while True:
-        buf = in_stream.read(_BUFFER_SIZE)
+        if isinstance(in_stream, hsStream):
+            bufsz = min(in_stream.size - in_stream.pos, _BUFFER_SIZE)
+            buf = in_stream.read(bufsz) if bufsz else None
+        else:
+            buf = in_stream.read(_BUFFER_SIZE)
         if not buf:
             break
         out_func(buf)
@@ -115,6 +119,32 @@ def copy_secure_assets(secure_lists, source_assets, staged_assets, output_path, 
         for client_path, size in executor.map(_copy_asset, asset_iter, chunksize=64):
             logging.trace(f"{client_path}: {size}")
             staged_assets[client_path].file_size = size
+
+def copy_server_assets(source_assets, staged_assets, age_path, sdl_path):
+    logging.info("Copying core assets to server directories...")
+
+    def copy_asset_template(asset_category, asset_suffix, output_path):
+        for client_path, asset in source_assets.items():
+            if asset_category in asset.categories and client_path.suffix.lower() == asset_suffix:
+                copy_asset(asset.source_path, output_path)
+
+    def copy_asset(asset_source_path, output_path):
+        asset_output_path = output_path.joinpath(asset_source_path.name)
+        if plEncryptedStream.IsFileEncrypted(asset_source_path):
+            logging.trace(f"Decrypting '{asset_source_path.name}' for the server.")
+            with plEncryptedStream().open(asset_source_path, fmRead, plEncryptedStream.kEncAuto) as in_stream:
+                with asset_output_path.open("wb") as out_stream:
+                    _io_loop(in_stream, out_stream.write)
+        else:
+            logging.trace(f"Copying '{asset_source_path.name}' for the server.")
+            shutil.copy2(asset_source_path, asset_output_path)
+
+    if age_path:
+        age_path.mkdir(exist_ok=True, parents=True)
+        copy_asset_template("data", ".age", age_path)
+    if sdl_path:
+        sdl_path.mkdir(exist_ok=True, parents=True)
+        copy_asset_template("sdl", ".sdl", sdl_path)
 
 def find_dirty_assets(cached_assets, staged_assets):
     logging.info("Comparing asset hashes...")
