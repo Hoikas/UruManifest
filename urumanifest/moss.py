@@ -71,7 +71,7 @@ class MOSS(manifest.ManifestDB):
             while s.pos < s.size:
                 try:
                     entry = manifest.ListEntry()
-                    entry.file_name = Path(cls._read_wstr(s))
+                    entry.file_name = Path(PureWindowsPath(cls._read_wstr(s)))
                     entry.file_size = cls._read_int(s)
                 except Exception as e:
                     logging.error(f"Malformed list '{path.name}' entry {i}")
@@ -104,8 +104,8 @@ class MOSS(manifest.ManifestDB):
 
                 try:
                     entry = manifest.ManifestEntry()
-                    entry.file_name = Path(cls._read_wstr(s))
-                    entry.download_name = Path(cls._read_wstr(s))
+                    entry.file_name = Path(PureWindowsPath(cls._read_wstr(s)))
+                    entry.download_name = Path(PureWindowsPath(cls._read_wstr(s)))
                     entry.file_hash = cls._read_wstr(s)
                     entry.download_hash = cls._read_wstr(s)
                     entry.file_size = cls._read_int(s)

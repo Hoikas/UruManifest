@@ -52,7 +52,7 @@ class Dirtsand(manifest.ManifestDB):
 
                 try:
                     entry = manifest.ListEntry()
-                    entry.file_name = Path(data[0])
+                    entry.file_name = Path(PureWindowsPath(data[0]))
                     entry.file_size = int(data[1])
                 except Exception as e:
                     logging.error(f"Malformed secure list '{path}' line #{i}")
@@ -91,8 +91,8 @@ class Dirtsand(manifest.ManifestDB):
 
                 try:
                     entry = manifest.ManifestEntry()
-                    entry.file_name = Path(data[0])
-                    entry.download_name = Path(data[1])
+                    entry.file_name = Path(PureWindowsPath(data[0]))
+                    entry.download_name = Path(PureWindowsPath(data[1]))
                     entry.file_hash = data[2]
                     entry.download_hash = data[3]
                     entry.file_size = int(data[4])
