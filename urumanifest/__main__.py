@@ -65,6 +65,7 @@ def generate(args):
         game_scripts_path = config.getindirpath("source", "scripts_path")
         gather_path = config.getindirpathopt("source", "gather_path")
         droid_key = utils.get_droid_key(config.get("server", "droid_key"))
+        make_preloader_mfs = config.getboolean("server", "secure_manifest")
         py_version = (config.getint("python", "major"), config.getint("python", "minor"))
         py_exe = config.getinfilepathopt("python", "path")
     except ValueError as e:
@@ -94,7 +95,7 @@ def generate(args):
         commit.find_dirty_assets(cached_db.assets, staged_assets)
 
         # Need to merge everything before we can begin the compress proc
-        secure_manifests, secure_lists = commit.make_secure_downloads(staged_assets, config["server"]["secure_manifest"])
+        secure_manifests, secure_lists = commit.make_secure_downloads(staged_assets, make_preloader_mfs)
         manifests = commit.merge_manifests(age_manifests, client_manifests, secure_manifests)
 
         commit.compress_dirty_assets(manifests, cached_db.assets, source_assets, staged_assets,
