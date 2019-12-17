@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 import itertools
 import json
 import logging
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Sequence
 
 from constants import *
@@ -99,12 +99,14 @@ def load_gather_assets(*paths):
                 client_path = Path(client_directory, i.relative_to(source_path))
                 num_assets += append_asset(gather_path, i, client_path, category)
 
-        for i in gather_assets:
-            if any((j in i for j in naughty_path_sequences)):
+        for i in (PureWindowsPath(i) for i in gather_assets):
+            if any((j in i.name for j in naughty_path_sequences)):
                 logging.error(f"SECURITY: ATTEMPT TO ESCAPE CWD BY: {source_path}")
                 continue
+
+            # NOTE: directory structure of the gather package will be pitched
             asset_path = source_path.joinpath(i)
-            client_path = Path(client_directory, i)
+            client_path = Path(client_directory, i.name)
             num_assets += append_asset(gather_path, asset_path, client_path, category)
         return num_assets
 
