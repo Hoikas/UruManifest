@@ -90,7 +90,7 @@ class ManifestFlags(enum.IntFlag):
     consumable = (1<<20)
 
 
-naughty_path_sequences = {"..", "/", "\\"}
+naughty_path_sequences = {"..", "../", "..\\"}
 
 patcher_lut = {
     "external": "UruLauncher.exe",
