@@ -102,8 +102,8 @@ def generate(args):
             list_path, mfs_path = temp_path, temp_path
 
             # dry-run forces these files to be copied for testing purposes
-            server_age_path = td.joinpath("server_age_files")
-            server_sdl_path = td.joinpath("server_sdl_files")
+            server_age_path = temp_path.joinpath("server_age_files")
+            server_sdl_path = temp_path.joinpath("server_sdl_files")
 
         plasma_python.process(source_assets, staged_assets, temp_path, droid_key, py_exe, py_version)
 
