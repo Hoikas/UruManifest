@@ -160,7 +160,7 @@ class MOSS(manifest.ManifestDB):
 
         with hsFileStream().open(out_path, fmWrite) as s:
             for key in droid_key:
-                s.write(key.to_bytes(length=4, byteorder="big"))
+                s.write(key.to_bytes(length=4, byteorder="little"))
 
     @classmethod
     def write_list(cls, path, name, entries):
