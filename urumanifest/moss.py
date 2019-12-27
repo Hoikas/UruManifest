@@ -63,8 +63,11 @@ class MOSS(manifest.ManifestDB):
     @classmethod
     def _read_int(cls, s):
         buf = s.read(4)
+        swapped = bytearray(len(buf))
+        swapped[0::2] = buf[1::2]
+        swapped[1::2] = buf[0::2]
         assert s.readShort() == 0
-        return int.from_bytes(buf, byteorder="big")
+        return int.from_bytes(bytes(swapped), byteorder="big")
 
     @classmethod
     def _read_lists(cls, path):
@@ -149,7 +152,10 @@ class MOSS(manifest.ManifestDB):
     @classmethod
     def _write_int(cls, s, value):
         buf = value.to_bytes(length=4, byteorder="big")
-        s.write(buf)
+        swapped = bytearray(len(buf))
+        swapped[0::2] = buf[1::2]
+        swapped[1::2] = buf[0::2]
+        s.write(bytes(swapped))
         s.writeShort(0)
 
     @classmethod
