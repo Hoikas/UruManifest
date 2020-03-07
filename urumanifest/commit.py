@@ -81,7 +81,7 @@ def compress_dirty_assets(manifests, cached_assets, source_assets, staged_assets
 
     # We only want to compress assets listed in a manifest. Some assets may be staged but in a
     # secure list only OR consumed into another staged asset.
-    compressed_assets = set(itertools.chain(*manifests.values()))
+    compressed_assets = set(itertools.chain.from_iterable(manifests.values()))
     logging.debug(f"Checking {len(compressed_assets)} of {len(staged_assets)} assets...")
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
@@ -115,7 +115,7 @@ def copy_secure_assets(secure_lists, source_assets, staged_assets, output_path, 
 
     # Sadly, the so-called "secure lists" do not store hashes. So, we must unconditionally copy
     # every single fracking time. SIGH.
-    secure_assets = set(itertools.chain(*secure_lists.values()))
+    secure_assets = set(itertools.chain.from_iterable(secure_lists.values()))
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
         asset_iter = ((source_assets[i].source_path, output_path, i)
@@ -248,11 +248,11 @@ def merge_manifests(age_manifests, client_manifests, secure_manifests):
     for manifest_names in gather_manifests.values():
         manifest = client_manifests.get(manifest_names.full)
         if manifest:
-            manifest.update(itertools.chain(*age_manifests.values()))
-            manifest.update(itertools.chain(*secure_manifests.values()))
+            manifest.update(itertools.chain.from_iterable(age_manifests.values()))
+            manifest.update(itertools.chain.from_iterable(secure_manifests.values()))
         manifest = client_manifests.get(manifest_names.thin)
         if manifest:
-            manifest.update(itertools.chain(*secure_manifests.values()))
+            manifest.update(itertools.chain.from_iterable(secure_manifests.values()))
 
     manifests = {}
     manifests.update(age_manifests)
@@ -272,7 +272,8 @@ def nuke_unstaged_assets(cached_db, staged_assets, mfs_path, list_path):
             logging.error(f"Unlinking page '{client_path.name}' -- this may cause issues on legacy clients!")
 
         deletions = 0
-        for entry in itertools.chain(*manifests.values(), *lists.values()):
+        for entry in itertools.chain(itertools.chain.from_iterable(manifests.values()),
+                                     itertools.chain.from_iterable(lists.values())):
             if entry.file_name == client_path:
                 deletions += unlink_entry(entry)
         return deletions

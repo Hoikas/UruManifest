@@ -57,7 +57,7 @@ class MOSS(manifest.ManifestDB):
                     break
                 yield wc
 
-        buf = itertools.chain(*(i.to_bytes(length=2, byteorder="little") for i in _read_wchars()))
+        buf = itertools.chain.from_iterable((i.to_bytes(length=2, byteorder="little") for i in _read_wchars()))
         return _utf16.decode(bytes(buf))[0]
 
     @classmethod
@@ -184,7 +184,7 @@ class MOSS(manifest.ManifestDB):
         cls._write_droid_key(path, droid_key)
         for dir_name, _ in contents.keys():
             # Nuke the extension and just use the directory name
-            entries = itertools.chain(*(value for key, value in contents.items() if key[0] == dir_name))
+            entries = itertools.chain.from_iterable((value for key, value in contents.items() if key[0] == dir_name))
             cls.write_list(path, dir_name, entries)
 
     @classmethod

@@ -136,7 +136,7 @@ def _find_page_externals(client_path, source_path, dlevel=plDebug.kDLNone):
     if get_keys(rel_idx):
         result.append((Path("dat", f"{page_info.age}.csv"), 0))
 
-    for i in itertools.chain(*map(get_keys, movie_idxes)):
+    for i in itertools.chain.from_iterable(map(get_keys, movie_idxes)):
         movie = read_pko(i)
         result.append((Path(movie.movieName), 0))
 
@@ -220,7 +220,7 @@ def find_script_dependencies(source_assets, staged_assets):
 
     # Unconditionally add the SDLs used by plSynchedObject
     logging.debug("Finding client core SDLs...")
-    client_sdl_paths = frozenset(itertools.chain(*map(find_sdl_deps, client_sdl)))
+    client_sdl_paths = frozenset(itertools.chain.from_iterable(map(find_sdl_deps, client_sdl)))
     logging.debug(f"Found {len(client_sdl_paths)} client core SDL files.")
     for i in client_sdl_paths:
         track_dependency(i)
@@ -229,7 +229,7 @@ def find_script_dependencies(source_assets, staged_assets):
     logging.debug("Finding optional Python SDLs...")
     pfm_class_names = frozenset((client_path.stem for client_path, _ in iter_pfms()))
     logging.debug(f"Searching over {len(pfm_class_names)} possible Python Classes")
-    py_sdl_paths = frozenset(itertools.chain(*map(find_sdl_opt, pfm_class_names)))
+    py_sdl_paths = frozenset(itertools.chain.from_iterable(map(find_sdl_opt, pfm_class_names)))
     logging.debug(f"Found {len(py_sdl_paths)} optional SDL files.")
     for i in py_sdl_paths:
         track_dependency(i)
