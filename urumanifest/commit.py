@@ -45,7 +45,11 @@ def _copy_asset(args):
     source_path, output_path, client_path = args
     asset_output_path = output_path.joinpath(client_path)
     asset_output_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_path, asset_output_path)
+    try:
+        shutil.copy2(source_path, asset_output_path)
+    except shutil.SameFileError:
+        # Hmmm...
+        pass
     return client_path, asset_output_path.stat().st_size
 
 def _hash_asset(args):

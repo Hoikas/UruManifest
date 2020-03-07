@@ -249,3 +249,29 @@ def process(source_assets, staged_assets, output_path, droid_key, py_exe=None, p
     module_code = _compyle_all(source_assets, staged_assets, py_exe, py_version)
     if module_code:
         _package(source_assets, staged_assets, module_code, output_path, droid_key)
+
+def reuse(cached_lists, source_assets, staged_assets, list_path):
+    logging.info("Recycling client Python...")
+
+    def iter_python_paks():
+        for (client_directory, extension), entries in cached_lists.items():
+            if client_directory.lower() == "python" and extension.lower() == "pak":
+                for i in entries:
+                    yield i.file_name, list_path.joinpath(i.file_name)
+
+    if not any(iter_python_paks()):
+        logging.critical("No Python pak files were found to recycle.")
+        logging.critical("No client python code will be available!")
+        return
+
+    for pak_client_path, source_path in iter_python_paks():
+        if not source_path.exists():
+            logging.error(f"Cannot recycle '{pak_client_path}' from '{source_path}'!")
+            continue
+
+        logging.debug(f"Recycling Python pak '{pak_client_path}'")
+        source_assets[pak_client_path] = Asset(None, source_path, pak_client_path, set(("python",)))
+        staged_asset = staged_assets[pak_client_path]
+        staged_asset.file_name = pak_client_path
+        # This was already encrypted (I hope?) by a previous run.
+        staged_asset.flags |= ManifestFlags.dont_encrypt

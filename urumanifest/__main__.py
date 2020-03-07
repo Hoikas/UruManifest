@@ -55,6 +55,7 @@ generate_parser = sub_parsers.add_parser("generate")
 method_group = generate_parser.add_mutually_exclusive_group()
 method_group.add_argument("--dry-run", action="store_true", default=False, help="don't produce any output")
 method_group.add_argument("--force", action="store_true", default=False, help="force regeneration of all files")
+generate_parser.add_argument("--reuse-python", action="store_true", default=False, help="skip regeneration of python.pak and reuse existing generated python assets")
 generate_parser.add_argument("--threads", type=int, help="maximum worker thread count", default=0)
 
 def dumpconfig(args):
@@ -105,7 +106,13 @@ def generate(args):
             server_age_path = temp_path.joinpath("server_age_files")
             server_sdl_path = temp_path.joinpath("server_sdl_files")
 
-        plasma_python.process(source_assets, staged_assets, temp_path, droid_key, py_exe, py_version)
+        if args.reuse_python:
+            # Dry runs can overwrite the list output path with a temp location. We want to use the
+            # old output as input, so get the actual value.
+            cfg_list_path = config.getoutdirpath("output", "lists")
+            plasma_python.reuse(cached_db.lists, source_assets, staged_assets, cfg_list_path)
+        else:
+            plasma_python.process(source_assets, staged_assets, temp_path, droid_key, py_exe, py_version)
 
         # Best to go ahead and copy the assets over to the server before anything is encrypted.
         # That way, we don't spin-wash encrypt then decrypt.
