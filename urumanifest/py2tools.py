@@ -46,7 +46,11 @@ def _use_compiler_module(legacy=False):
 
 def _read_py_source(py_file_path):
     try:
-        fp = open(py_file_path, "r")
+        if sys.version_info[0] == 2:
+            fp = open(py_file_path, "r")
+        else:
+            fp = open(py_file_path, "r", encoding="utf-8")
+
         # Carriage returns are illegal in Py2 source code...
         return fp.read().replace('\r\n', '\n').replace('\r', '\n')
     finally:
@@ -153,7 +157,12 @@ def _handle_command():
         import os, msvcrt
         msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
 
-    code = pickle.load(sys.stdin)
+    if sys.version_info[0] == 2:
+        stdin, stdout = sys.stdin, sys.stdout
+    else:
+        stdin, stdout = sys.stdin.buffer, sys.stdout.buffer
+    code = pickle.load(stdin)
+
     try:
         command = _commands.get(code.pop(u"cmd"))
         if command:
@@ -163,11 +172,10 @@ def _handle_command():
             # everything is a flipping unicode object now. SIGH.
             kwargs = {}
             if sys.version_info[0] == 2:
-                iter_items = code.iteritems
+                for key, value in code.iteritems():
+                    kwargs[key.encode("utf-8")] = value
             else:
-                iter_items = code.items
-            for key, value in iter_items():
-                kwargs[key.encode("utf-8")] = value
+                kwargs = code
             result = command(*args, **kwargs)
         else:
             result = { u"returncode": TOOLS_INVALID_COMMAND }
@@ -178,7 +186,7 @@ def _handle_command():
 
     if u"returncode" not in result:
         result[u"returncode"] = TOOLS_SUCCESS
-    pickle.dump(result, sys.stdout, 0)
+    pickle.dump(result, stdout, 0)
 
 if __name__ == "__main__":
     _handle_command()

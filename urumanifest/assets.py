@@ -19,6 +19,8 @@ import itertools
 import json
 import logging
 from pathlib import Path, PureWindowsPath
+import subprocess
+import sys
 from typing import Sequence
 
 from constants import *
@@ -167,21 +169,30 @@ def load_gather_assets(*paths):
     logging.debug(f"Loaded {len(gathers)} assets from gathers.")
     return gathers
 
-def load_prebuilt_assets(data_path, scripts_path):
+def load_prebuilt_assets(data_path, scripts_path, py_exe):
     logging.info("Loading prebuilt assets...")
 
     prebuilts = {}
 
-    def handle_prebuilts(category, base_path, source_path=None, follow_dirs=True):
+    def find_python_dist_packages():
+        result = subprocess.run([str(py_exe), "-c",
+                                "import sys, distutils.sysconfig;"
+                                "sys.stdout.write(distutils.sysconfig.get_python_lib(plat_specific=False,standard_lib=True))"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return Path(result.stdout.decode(sys.getdefaultencoding()))
+
+    def handle_prebuilts(category, base_path, source_path=None, prefix_path=None, follow_dirs=True, skip_dirs=set()):
         if source_path is None:
             source_path = base_path
 
         for i in source_path.iterdir():
             if i.is_file():
                 client_path = i.relative_to(base_path)
+                if prefix_path:
+                    client_path = prefix_path.joinpath(client_path)
                 prebuilts[client_path] = Asset(None, i, client_path, set((category,)))
-            elif i.is_dir() and follow_dirs:
-                handle_prebuilts(category, base_path, i)
+            elif i.is_dir() and follow_dirs and i.stem not in skip_dirs:
+                handle_prebuilts(category, base_path, i, prefix_path=prefix_path)
 
     for category, client_directory in gather_lut.items():
         if not client_directory:
@@ -200,6 +211,21 @@ def load_prebuilt_assets(data_path, scripts_path):
 
     # Have to handle the client root a bit differently due to duplication of the gather sections.
     handle_prebuilts(None, data_path, follow_dirs=False)
+
+    # Load the python standard library in, if needed.
+    if not scripts_path.joinpath("Python", "system").is_dir():
+        logging.debug("Using build system's python stdlib...")
+        stdlib_path = find_python_dist_packages()
+        if stdlib_path.is_dir():
+            logging.debug(f"... from {stdlib_path}")
+            handle_prebuilts("python", stdlib_path, prefix_path=Path("Python", "system"),
+                             skip_dirs={"__pycache__", "site-packages", "asyncio", "concurrent",
+                                        "ctypes", "curses", "dbm", "distutils", "ensurepip", "email",
+                                        "html", "http", "idlelib", "lib2to3", "msilib", "multiprocessing",
+                                        "pydoc_data", "sqlite3", "test", "tkinter", "turtledemo",
+                                        "unittest", "urllib", "venv", "wsgiref", "xml", "xmlrpc"})
+        else:
+            logging.critical(f"Python stdlib path is invalid: {stdlib_path}")
 
     logging.debug(f"Loaded {len(prebuilts)} prebuilt assets.")
     return prebuilts

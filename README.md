@@ -9,12 +9,12 @@ Cross platform tool to generate a complete Myst Online: Uru Live file server fro
 
 ## Related Projects
 - [moul-assets](https://github.com/H-uru/moul-assets) - Compiled Uru game assets
-- [moul-scripts](https://github.com/H-uru/moul-scripts) - Source Uru script assets
+- [Plasma](https://github.com/H-uru/Plasma) - Plasma engine sources, including scripts
 
 ## Installing
 UruManifest requires Python 3.6 or higher. If you are using Python 3.6, you will need to install the backport of the `dataclasses` module from Python 3.7 by running `pip install dataclasses`. You will also need to compile and install libHSPlasma's PyHSPlasma bindings for Python 3.
 
-Additionally, to build a Python.pak for your shard, you will need to have the version of Python used by Uru itself. For H-uru based Uru clients, this is Python 2.7. For Cyan's Myst Online: Uru Live, this is currently Python 2.3. No additional modules or extensions are needed for this version of Python.
+Additionally, to build a Python.pak for your shard, you will need to have the version of Python used by Uru itself. For H-uru based Uru clients, this is Python 3.8. For Cyan's Myst Online: Uru Live, this is currently Python 2.3. No additional modules or extensions are needed for this version of Python.
 
 ## Getting Started
 UruManifest uses a configuration file to facillitate iteration. To generate a default configuration file, execute `python urumanifest dumpconfig`. The `--config` argument can be specified if you wish to use a filename other than `./config.ini`. These values should be tweaked to match your particular configuration.

@@ -86,8 +86,18 @@ def generate(args):
         # reraise as AssetError so config errors look sane.
         raise assets.AssetError(f"Config problem: {e}")
 
+    # Find python2-compatible schtuff
+    if py_exe and py_exe.is_file() and utils.check_python_version(py_exe, py_version):
+        logging.debug(f"Using configured Python executable: {py_exe}")
+    else:
+        py_exe = utils.find_python_exe(py_version)
+        if not utils.check_python_version(py_exe, py_version):
+            py_exe = None
+    if not py_exe:
+        logging.critical(f"Could not find Python {py_version[0]}.{py_version[1]}")
+
     cached_db = assets.load_asset_database(mfs_path, list_path, db_type)
-    prebuilts = assets.load_prebuilt_assets(game_data_path, game_scripts_path)
+    prebuilts = assets.load_prebuilt_assets(game_data_path, game_scripts_path, py_exe)
     gathers = assets.load_gather_assets(gather_path)
     source_assets = assets.merge_asset_dicts(prebuilts, gathers)
 

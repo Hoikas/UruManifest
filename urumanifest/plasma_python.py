@@ -70,7 +70,7 @@ def _compyle_file(py_exe, py_tools_path, py_file_path, py_glue_path, module_name
         return pickle.loads(stdout, encoding="bytes")
     return {}
 
-def _compyle_all(source_assets, staged_assets, py_exe=None, py_version=(2, 7), ncpus=None):
+def _compyle_all(source_assets, staged_assets, py_exe=None, ncpus=None):
     logging.info("Compyling Python...")
 
     def iter_python_sources():
@@ -111,15 +111,8 @@ def _compyle_all(source_assets, staged_assets, py_exe=None, py_version=(2, 7), n
                     except UnicodeError:
                         pass
 
-    # Find python2-compatible schtuff
-    if py_exe and py_exe.is_file() and utils.check_python_version(py_exe, py_version):
-        logging.debug(f"Using configured Python executable: {py_exe}")
-    else:
-        py_exe = utils.find_python_exe(py_version)
-        if not utils.check_python_version(py_exe, py_version):
-            py_exe = None
-    if not py_exe:
-        logging.critical(f"Could not find Python {py_version[0]}.{py_version[1]}")
+    if py_exe is None:
+        logging.critical("Python is not available???")
         return
     py_tools_path = utils.find_python2_tools()
     if not py_tools_path.exists():
@@ -246,7 +239,7 @@ def process(source_assets, staged_assets, output_path, droid_key, py_exe=None, p
         logging.critical("No Python.pak will be generated!")
         return
 
-    module_code = _compyle_all(source_assets, staged_assets, py_exe, py_version)
+    module_code = _compyle_all(source_assets, staged_assets, py_exe)
     if module_code:
         _package(source_assets, staged_assets, module_code, output_path, droid_key)
 
