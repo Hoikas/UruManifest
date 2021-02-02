@@ -127,6 +127,6 @@ class Dirtsand(manifest.ManifestDB):
         with out_path.open("w") as f:
             for i in entries:
                 fn, dn = PureWindowsPath(i.file_name), PureWindowsPath(i.download_name)
-                ln = f"{fn},{dn},{i.file_hash},{i.download_hash},{i.file_size},{i.download_size},{i.flags & 0xFFFF}"
+                ln = f"{fn},{dn},{i.file_hash},{i.download_hash},{i.file_size},{i.download_size},{int(i.flags) & 0xFFFF}"
                 logging.trace(ln)
                 f.write(f"{ln}\n")
