@@ -35,4 +35,4 @@ pip-log.txt
 .vs
 
 # Local UruManifest stuff
-config.ini
+*.ini
