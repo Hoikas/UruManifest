@@ -27,18 +27,15 @@ from assets import AssetError
 from constants import *
 import encryption
 import manifest
+import plasmoul
 
 def find_age_dependencies(source_assets, staged_assets, ncpus=None):
     logging.info("Finding age dependencies...")
     manifests = defaultdict(set)
 
     def find_age_pages(age_info):
-        # Collect a list of all age pages to be abused for the purpose of finding its resources
-        # Would be nice if this were a common function of libHSPlasma...
-        for i in range(age_info.getNumPages()):
-            yield Path("dat", age_info.getPageFilename(i, pvMoul))
-        for i in range(age_info.getNumCommonPages(pvMoul)):
-            yield Path("dat", age_info.getCommonPageFilename(i, pvMoul))
+        for i in age_info.all_pages:
+            yield Path("dat", f"{age_info.name}_District_{i}.prp")
 
     def track_dependency(age_name, client_path, flags=0):
         if client_path not in source_assets:
@@ -61,8 +58,7 @@ def find_age_dependencies(source_assets, staged_assets, ncpus=None):
         for age_client_path, age_asset in age_files:
             logging.trace(f"Reading age info '{age_client_path.stem}'...")
 
-            age_info = plAgeInfo()
-            age_info.readFromFile(age_asset.source_path)
+            age_info = plasmoul.plAge(age_asset.source_path)
             age_name = age_info.name
 
             for page_client_path in find_age_pages(age_info):
@@ -80,7 +76,7 @@ def find_age_dependencies(source_assets, staged_assets, ncpus=None):
             funny_client_path = age_client_path.with_suffix(".fni")
             if funny_client_path in source_assets:
                 track_dependency(age_name, funny_client_path)
-            elif age_info.seqPrefix >= 0:
+            elif age_info.prefix >= 0:
                 logging.warning(f"No funny (FNI) file found for age '{age_name}'!")
 
     # HAX fragile count
@@ -88,59 +84,30 @@ def find_age_dependencies(source_assets, staged_assets, ncpus=None):
 
     return manifests
 
-def _find_page_externals(client_path, source_path, dlevel=plDebug.kDLNone):
-    def read_pko(key):
-        koStub = key.object
-        if isinstance(koStub, hsKeyedObjectStub):
-            # This is somewhat inefficient WRT copying data, but better than trying to handle all
-            # the doggong DSpan reading...
-            stream = hsRAMStream(pvMoul)
-            stream.writeShort(koStub.stub.ClassIndexVer(pvMoul))
-            stream.write(koStub.stub.getData())
-            stream.rewind()
-            # important to use a new manager -- the old one will crash...
-            return plResManager(pvMoul).ReadCreatable(stream)
-        return koStub
+def _find_page_externals(client_path, source_path):
+    # FIXME: This should probably also consider movies on a per-Age basis. However, implementing
+    # a reader for plLayerAnimation is nontrivial. Further, movies are currently listed in the
+    # client manifest. So, we'll omit them for now.
+    with plasmoul.plPage(source_path) as page_info:
+        result = []
+        for pfm in page_info.get_objects(plasmoul.plPythonFileMod):
+            client_path = Path("Python", f"{pfm.file_name}.py")
+            flags = ManifestFlags.python_file_mod | ManifestFlags.script | ManifestFlags.consumable
+            result.append((client_path, flags))
 
-    plDebug.Init(dlevel)
-    mgr = plResManager()
-    ## FIXME: We would prefer to stub the keyed objects and read them in on demand, but that seems
-    # to cause safe strings to become corrupted on Linux.
-    page_info = mgr.ReadPage(source_path)
-
-    pfm_idx = plFactory.ClassIndex("plPythonFileMod")
-    sfx_idx = plFactory.ClassIndex("plSoundBuffer")
-    rel_idx = plFactory.ClassIndex("plRelevanceRegion")
-    movie_idxes = [plFactory.ClassIndex(i.__class__.__name__) for i in plLayerMovie.__subclasses__()]
-    movie_idxes.append(plFactory.ClassIndex("plLayerMovie"))
-    get_keys = functools.partial(mgr.getKeys, page_info.location)
-
-    result = []
-    for i in get_keys(pfm_idx):
-        pfm = read_pko(i)
-        client_path = Path("Python", f"{pfm.filename}.py")
-        flags = ManifestFlags.python_file_mod | ManifestFlags.script | ManifestFlags.consumable
-        result.append((client_path, flags))
-
-    for i in get_keys(sfx_idx):
-        sbuf = read_pko(i)
-        client_path = Path("sfx", sbuf.fileName)
-        if sbuf.flags & plSoundBuffer.kStreamCompressed:
-            flags = ManifestFlags.sound_stream_compressed
-        else:
-            if sbuf.flags & plSoundBuffer.kOnlyLeftChannel or sbuf.flags & plSoundBuffer.kOnlyRightChannel:
-                flags = ManifestFlags.sound_cache_split
+        for sbuf in page_info.get_objects(plasmoul.plSoundBuffer):
+            client_path = Path("sfx", sbuf.file_name)
+            if sbuf.stream:
+                flags = ManifestFlags.sound_stream_compressed
             else:
-                flags = ManifestFlags.sound_cache_stereo
-        result.append((client_path, flags))
+                if sbuf.split_channel:
+                    flags = ManifestFlags.sound_cache_split
+                else:
+                    flags = ManifestFlags.sound_cache_stereo
+            result.append((client_path, flags))
 
-    if get_keys(rel_idx):
-        result.append((Path("dat", f"{page_info.age}.csv"), 0))
-
-    for i in itertools.chain.from_iterable(map(get_keys, movie_idxes)):
-        movie = read_pko(i)
-        result.append((Path(movie.movieName), 0))
-
+        if page_info.get_keys(plasmoul.plRelevanceRegion):
+            result.append((Path("dat", f"{page_info.age}.csv"), 0))
     return result
 
 def find_client_dependencies(source_assets, staged_assets):
