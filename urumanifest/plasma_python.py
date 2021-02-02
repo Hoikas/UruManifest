@@ -22,12 +22,13 @@ try:
     import cPickle as pickle
 except ImportError:
     import pickle
-from PyHSPlasma import *
 import subprocess
 from threading import Lock
 
 from assets import Asset
 from constants import *
+import encryption
+import plasmoul
 import utils
 
 def _build_module_name(script_client_path, source_assets):
@@ -179,7 +180,7 @@ def _package(source_assets, staged_assets, module_code, output_path, droid_key):
     pak_source_path = output_path.joinpath(pak_client_path)
     pak_source_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # We are using a plEncryptedStream, which doesn't seek very well at all.
+    # We are using an encrypted strean, which doesn't seek at all.
     # Therefore, we will go ahead and calculate the size of the index block so
     # there is no need to seek around to write offset values
     base_offset = 4 # uint32_t numFiles
@@ -199,16 +200,15 @@ def _package(source_assets, staged_assets, module_code, output_path, droid_key):
         data_offset += 4  # uint32_t filesz
         data_offset += len(compyled_code)
 
-    stream = plEncryptedStream(pvMoul)
-    stream.setKey(droid_key)
-    with stream.open(pak_source_path, fmCreate, plEncryptedStream.kEncDroid):
-        stream.writeInt(len(pyc_info))
+    kwargs = dict(mode=encryption.Mode.WriteBinary, enc=encryption.Encryption.BTEA, key=droid_key)
+    with plasmoul.stream(encryption.stream, pak_source_path, **kwargs) as stream:
+        stream.writeu32(len(pyc_info))
         for module_name, data_offset, compyled_code in pyc_info:
-            stream.writeSafeStr(module_name)
+            stream.write_safe_string(module_name)
             # offset of data == index size (base_offset) + offset to data blob (data_offset)
-            stream.writeInt(base_offset + data_offset)
+            stream.writeu32(base_offset + data_offset)
         for module_name, data_offset, compyled_code in pyc_info:
-            stream.writeInt(len(compyled_code))
+            stream.writeu32(len(compyled_code))
             stream.write(compyled_code)
 
     source_assets[pak_client_path] = Asset(None, pak_source_path, pak_client_path, set(("python",)))

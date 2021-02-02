@@ -25,6 +25,7 @@ import subprocess
 
 from assets import AssetError
 from constants import *
+import encryption
 import manifest
 
 def find_age_dependencies(source_assets, staged_assets, ncpus=None):
@@ -282,7 +283,7 @@ def _load_sdl_descriptors(assets):
 
         # Strictly speaking, due to the configurable nature of the key, btea/notthedroids encrypted
         # SDL files are not allowed here. So, let's detect that.
-        if plEncryptedStream.IsFileEncrypted(asset.source_path):
+        if encryption.determine(asset.source_path) != encryption.Encryption.Unspecified:
             raise AssetError(f"SDL File '{asset.source_path.name}' is encrypted and cannot be used for packaging.")
             continue
 

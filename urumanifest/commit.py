@@ -21,12 +21,12 @@ from hashlib import md5
 import itertools
 import logging
 from pathlib import Path
-from PyHSPlasma import *
 import shutil
 import tempfile
 
 from assets import Asset, AssetError
 from constants import *
+import encryption
 import manifest
 
 _BUFFER_SIZE = 10 * 1024 * 1024
@@ -61,11 +61,7 @@ def _hash_asset(args):
 
 def _io_loop(in_stream, out_func):
     while True:
-        if isinstance(in_stream, hsStream):
-            bufsz = min(in_stream.size - in_stream.pos, _BUFFER_SIZE)
-            buf = in_stream.read(bufsz) if bufsz else None
-        else:
-            buf = in_stream.read(_BUFFER_SIZE)
+        buf = in_stream.read(_BUFFER_SIZE)
         if not buf:
             break
         out_func(buf)
@@ -134,9 +130,9 @@ def copy_server_assets(source_assets, staged_assets, age_path, sdl_path):
 
     def copy_asset(asset_source_path, output_path):
         asset_output_path = output_path.joinpath(asset_source_path.name)
-        if plEncryptedStream.IsFileEncrypted(asset_source_path):
+        if encryption.determine(asset_source_path) != encryption.Encryption.Unspecified:
             logging.trace(f"Decrypting '{asset_source_path.name}' for the server.")
-            with plEncryptedStream().open(asset_source_path, fmRead, plEncryptedStream.kEncAuto) as in_stream:
+            with encryption.stream(asset_source_path, encryption.Mode.ReadBinary) as in_stream:
                 with asset_output_path.open("wb") as out_stream:
                     _io_loop(in_stream, out_stream.write)
         else:
@@ -184,31 +180,25 @@ def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key)
             continue
 
         source_asset = source_assets[client_path]
-        try:
-            src_stream = plEncryptedStream()
-            src_stream.open(source_asset.source_path, fmRead, plEncryptedStream.kEncAuto)
-        except IOError:
-            current_crypt = plEncryptedStream.kEncNone
-        else:
-            current_crypt = src_stream.getEncType()
-        finally:
-            src_stream.close()
+        current_crypt = encryption.determine(source_asset.source_path)
 
-        if current_crypt == plEncryptedStream.kEncNone:
+        if current_crypt == encryption.Encryption.Unspecified:
             logging.trace(f"Encrypting '{client_path}'...")
+
+            kwargs = dict(mode=encryption.Mode.WriteBinary, enc=desired_crypt)
+            if desired_crypt == encryption.Encryption.BTEA:
+                kwargs["key"] = droid_key
 
             out_path = working_path.joinpath(client_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            with plEncryptedStream().open(out_path, fmCreate, desired_crypt) as out_stream:
-                if desired_crypt == plEncryptedStream.kEncDroid:
-                    out_stream.setKey(droid_key)
+            with encryption.stream(out_path, **kwargs) as out_stream:
                 with source_asset.source_path.open("rb") as in_stream:
                     _io_loop(in_stream, out_stream.write)
 
             source_asset.source_path = out_path
             staged_asset.flags |= ManifestFlags.dirty
         elif current_crypt == desired_crypt:
-            if desired_crypt == plEncryptedStream.kEncDroid:
+            if desired_crypt == encryption.Encryption.BTEA:
                 logging.warning(f"Asset '{client_path}' is already droid encrypted??? That's a bad idea(TM)...")
             else:
                 logging.debug(f"Asset '{client_path}' is already encrypted!")

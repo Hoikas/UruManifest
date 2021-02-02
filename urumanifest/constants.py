@@ -15,8 +15,8 @@
 
 from collections import namedtuple
 import enum
-from PyHSPlasma import plEncryptedStream
 
+from encryption import Encryption
 import py2constants
 
 client_sdl = frozenset((
@@ -35,11 +35,11 @@ client_sdl = frozenset((
 ))
 
 crypt_types = {
-    ".age": plEncryptedStream.kEncXtea,
-    ".csv": plEncryptedStream.kEncXtea,
-    ".fni": plEncryptedStream.kEncXtea,
-    ".pak": plEncryptedStream.kEncDroid,
-    ".sdl": plEncryptedStream.kEncDroid,
+    ".age": Encryption.XTEA,
+    ".csv": Encryption.XTEA,
+    ".fni": Encryption.XTEA,
+    ".pak": Encryption.BTEA,
+    ".sdl": Encryption.BTEA,
 }
 
 # All gather sections that list installer prerequisites
