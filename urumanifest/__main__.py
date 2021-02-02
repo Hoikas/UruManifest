@@ -18,7 +18,6 @@ from collections import defaultdict
 import functools
 import logging
 from pathlib import Path
-from PyHSPlasma import *
 import sys
 import tempfile
 import time
@@ -177,8 +176,6 @@ if __name__ == "__main__":
     logging.trace("harro!")
 
     try:
-        plDebug.Init(plDebug.kDLNone)
-
         # Go go go
         try:
             cmdcall = globals().get(args.command)
