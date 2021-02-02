@@ -12,7 +12,7 @@ Cross platform tool to generate a complete Myst Online: Uru Live file server fro
 - [Plasma](https://github.com/H-uru/Plasma) - Plasma engine sources, including scripts
 
 ## Installing
-UruManifest requires Python 3.6 or higher. If you are using Python 3.6, you will need to install the backport of the `dataclasses` module from Python 3.7 by running `pip install dataclasses`. You will also need to compile and install libHSPlasma's PyHSPlasma bindings for Python 3.
+UruManifest requires Python 3.8 or higher. You will also need to compile and install libHSPlasma's PyHSPlasma bindings for Python 3.
 
 Additionally, to build a Python.pak for your shard, you will need to have the version of Python used by Uru itself. For H-uru based Uru clients, this is Python 3.8. For Cyan's Myst Online: Uru Live, this is currently Python 2.3. No additional modules or extensions are needed for this version of Python.
 
