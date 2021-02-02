@@ -16,7 +16,6 @@
 import abc
 import contextlib
 import enum
-import functools
 import io
 from os import PathLike
 import struct
@@ -193,20 +192,22 @@ class _XTEAStream(_Stream):
         v0, v1 = buf
         delta, mask = 0x9e3779b9, 0xffffffff
         key = 0
+        ekey = self._key
         for i in range(32):
-            v0 = (v0 + (((v1 << 4 ^ v1 >> 5) + v1) ^ (key + self._key[key & 3]))) & mask
+            v0 = (v0 + (((v1 << 4 ^ v1 >> 5) + v1) ^ (key + ekey[key & 3]))) & mask
             key = (key + delta) & mask
-            v1 = (v1 + (((v0 << 4 ^ v0 >> 5) + v0) ^ (key + self._key[key >> 11 & 3]))) & mask
+            v1 = (v1 + (((v0 << 4 ^ v0 >> 5) + v0) ^ (key + ekey[key >> 11 & 3]))) & mask
         return v0, v1
 
     def decipher(self, buf : Tuple[int, int]) -> Tuple[int, int]:
         v0, v1 = buf
         delta = 0x9e3779b9
         key = (delta * 32) & 0xffffffff
+        ekey = self._key
         for i in range(32):
-            v1 = (v1 - (((v0 << 4 ^ v0 >> 5) + v0) ^ (key + self._key[key >> 11 & 3]))) & 0xffffffff
+            v1 = (v1 - (((v0 << 4 ^ v0 >> 5) + v0) ^ (key + ekey[key >> 11 & 3]))) & 0xffffffff
             key = (key - delta) & 0xffffffff
-            v0 = (v0 - (((v1 << 4 ^ v1 >> 5) + v1) ^ (key + self._key[key & 3]))) & 0xffffffff
+            v0 = (v0 - (((v1 << 4 ^ v1 >> 5) + v1) ^ (key + ekey[key & 3]))) & 0xffffffff
         return v0, v1
 
 
@@ -220,61 +221,62 @@ class _BTEAStream(_Stream):
     def magic_string(self) -> bytes:
         return b"notthedroids"
 
-    def _encipher(self, num :int, buf : Tuple[int, int]) -> Tuple[int, int]:
+    def encipher(self, buf : Tuple[int, int]) -> Tuple[int, int]:
         v = list(buf)
-        y, z = buf[0], buf[num - 1]
+        y, z = buf[0], buf[1]
         delta = 0x9e3779b9
-        q = 6 + 52 // num
         key = 0
 
         # Unrolled for performance
         #mx = lambda: (z>>5 ^ y<<2) + (y>>3 ^ z<<4) ^ (key^y) + (self._key[p&3^e]^z)
 
-        while q > 0:
+        ekey = self._key
+        for q in range(32): # 6 + 52 // num
             key = (key + delta) & 0xffffffff
             e = (key >> 2) & 3
-            p = 0
-            while p < num - 1:
-                y = v[p + 1]
-                #v[p] = (v[p] + mx()) & 0xffffffff
-                v[p] = (v[p] + ((z>>5 ^ y<<2) + (y>>3 ^ z<<4) ^ (key^y) + (self._key[p&3^e]^z))) & 0xffffffff
-                z = v[p]
-                p += 1
+
+            # Unrolled loop for performance
+            y = v[1]
+            #v[0] = (v[0] + mx()) & 0xffffffff
+            v[0] = (v[0] + ((z>>5 ^ y<<2) + (y>>3 ^ z<<4) ^ (key^y) + (ekey[0^e]^z))) & 0xffffffff
+            z = v[0]
+
+            # Last word
             y = v[0]
             #v[num - 1] = (v[num - 1] + mx()) & 0xffffffff
-            v[num - 1] = (v[num - 1] + ((z>>5 ^ y<<2) + (y>>3 ^ z<<4) ^ (key^y) + (self._key[p&3^e]^z))) & 0xffffffff
-            z = v[num - 1]
-            q -= 1
+            v[1] = (v[1] + ((z>>5 ^ y<<2) + (y>>3 ^ z<<4) ^ (key^y) + (ekey[1^e]^z))) & 0xffffffff
+            z = v[1]
+
         return tuple(v)
 
-    def _decipher(self, num : int, buf : Tuple[int, int]) -> Tuple[int, int]:
+    def decipher(self, buf : Tuple[int, int]) -> Tuple[int, int]:
         v = list(buf)
-        y, z = buf[0], buf[num - 1]
+        y, z = buf[0], buf[1]
         delta = 0x9e3779b9
-        q = 6 + 52 // num
-        key = (q * delta) & 0xffffffff
+        # key = ((6 + 52 // 2) * delta) & 0xffffffff
+        key = (32 * delta) & 0xffffffff
 
         # Unrolled for performance...
         #mx = lambda: (z>>5 ^ y<<2) + (y>>3 ^ z<<4) ^ (key^y) + (self._key[p&3^e]^z)
 
+        ekey = self._key
         while key > 0:
             e = (key >> 2) & 3
-            p = num -1
-            while p > 0:
-                z = v[p - 1]
-                #v[p] = (v[p] - mx()) & 0xffffffff
-                v[p] = (v[p] - ((z>>5 ^ y<<2) + (y>>3 ^ z<<4) ^ (key^y) + (self._key[p&3^e]^z))) & 0xffffffff
-                y = v[p]
-                p -= 1
-            z = v[num - 1]
+
+            # Unrolled loop for performance
+            z = v[0]
+            #v[1] = (v[1] - mx()) & 0xffffffff
+            v[1] = (v[1] - ((z>>5 ^ y<<2) + (y>>3 ^ z<<4) ^ (key^y) + (ekey[1^e]^z))) & 0xffffffff
+            y = v[1]
+
+            # Last word
+            z = v[1]
             #v[0] = (v[0] - mx()) & 0xffffffff
-            v[0] = (v[0] - ((z>>5 ^ y<<2) + (y>>3 ^ z<<4) ^ (key^y) + (self._key[p&3^e]^z))) & 0xffffffff
+            v[0] = (v[0] - ((z>>5 ^ y<<2) + (y>>3 ^ z<<4) ^ (key^y) + (ekey[0^e]^z))) & 0xffffffff
             y = v[0]
+
             key = (key - delta) & 0xffffffff
         return tuple(v)
-
-    encipher = functools.partialmethod(_encipher, 2)
-    decipher = functools.partialmethod(_decipher, 2)
 
 
 @contextlib.contextmanager
