@@ -102,8 +102,10 @@ class _Stream(abc.ABC, io.RawIOBase):
 
     def read(self, size : int = -1) -> bytes:
         # Encrypted in blocks of two unsigned 32-bit integers
-        if size == -1:
+        if size < 0:
             size = self._size - self._pos
+        else:
+            size = min(size, self._size - self._pos)
         assert self._pos + size <= self._size
 
         buf = bytearray(size)
@@ -282,6 +284,7 @@ def stream(filename : Union[str, bytes, PathLike],
            enc : Encryption = Encryption.Unspecified,
            **kwargs) -> io.BufferedIOBase:
 
+    assert enc in Encryption, "Invalid encryption type"
     if enc == Encryption.Unspecified:
         if mode in (Mode.WriteBinary, Mode.WriteText):
             raise io.UnsupportedOperation("Writable encrypted streams require an explicit encryption type")
