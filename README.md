@@ -1,4 +1,5 @@
 # UruManifest
+![CI](https://github.com/Hoikas/UruManifest/workflows/CI/badge.svg)
 [![Maintainability](https://api.codeclimate.com/v1/badges/2292f18dae31a985d794/maintainability)](https://codeclimate.com/github/Hoikas/UruManifest/maintainability)
 
 Cross platform tool to generate a complete Myst Online: Uru Live file server from a set of game assets and gather packages.
