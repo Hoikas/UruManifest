@@ -76,6 +76,12 @@ def _compare_files(newFile : Path, prevFile : Path, *, key=None) -> bool:
         _io_loop(s, newHash.update)
     return prevHash.digest() == newHash.digest()
 
+def _encrypt_asset(source_path : Path, out_path : Path, *, enc : encryption.Encryption, key=None):
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with encryption.stream(out_path, encryption.Mode.WriteBinary, enc=enc, key=key) as out_stream:
+        with encryption.stream(source_path, encryption.Mode.ReadBinary) as in_stream:
+            _io_loop(in_stream, out_stream.write)
+
 def _io_loop(in_stream, out_func):
     while True:
         buf = in_stream.read(_BUFFER_SIZE)
@@ -227,39 +233,43 @@ def find_dirty_assets(cached_assets, staged_assets):
     dump_set("CHANGED", changed_assets)
     dump_set("DELETED", deleted_assets)
 
-def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key):
+def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key, ncpus=None):
     logging.info("Encrypting assets...")
 
-    for client_path, staged_asset in staged_assets.items():
-        desired_crypt = crypt_types.get(client_path.suffix.lower())
-        if desired_crypt is None or staged_asset.flags & ManifestFlags.dont_encrypt:
-            continue
+    def on_asset_encrypt(client_path, fut):
+        logging.trace(f"Encrypted: {client_path}")
+        # Propagate any exceptions...
+        fut.result()
 
-        source_asset = source_assets[client_path]
-        current_crypt = encryption.determine(source_asset.source_path)
+    with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
+        for client_path, staged_asset in staged_assets.items():
+            desired_crypt = crypt_types.get(client_path.suffix.lower())
+            if desired_crypt is None or staged_asset.flags & ManifestFlags.dont_encrypt:
+                continue
 
-        if current_crypt != desired_crypt and current_crypt != encryption.Encryption.BTEA:
-            logging.trace(f"Encrypting '{client_path}'...")
+            source_asset = source_assets[client_path]
+            current_crypt = encryption.determine(source_asset.source_path)
 
-            kwargs = dict(mode=encryption.Mode.WriteBinary, enc=desired_crypt)
-            if desired_crypt == encryption.Encryption.BTEA:
-                kwargs["key"] = droid_key
+            if current_crypt != desired_crypt and current_crypt != encryption.Encryption.BTEA:
+                out_path = working_path.joinpath(client_path)
 
-            out_path = working_path.joinpath(client_path)
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            with encryption.stream(out_path, **kwargs) as out_stream:
-                with encryption.stream(source_asset.source_path, encryption.Mode.ReadBinary) as in_stream:
-                    _io_loop(in_stream, out_stream.write)
+                kwargs = {
+                    "enc": desired_crypt,
+                    "key": droid_key if desired_crypt == encryption.Encryption.BTEA else None,
+                }
 
-            source_asset.source_path = out_path
-            # I'm not sure why we forced the encrypted files as dirty. The hash stage is after this,
-            # so we should catch any differences. Gonna leave it in, commented out, in case I'm
-            # just not thinking about something. :/
-            #staged_asset.flags |= ManifestFlags.dirty
-        elif current_crypt == desired_crypt and desired_crypt == encryption.Encryption.BTEA:
-            logging.warning(f"Asset '{client_path}' is already droid encrypted??? This will prevent trivial key changes.")
-        elif current_crypt != desired_crypt:
-            raise AssetError(f"Asset '{source_asset.source_path}' was pre-encrypted incorrectly. Please decrypt it manually.")
+                fut = executor.submit(_encrypt_asset, source_asset.source_path, out_path, **kwargs)
+                fut.add_done_callback(functools.partial(on_asset_encrypt, client_path))
+
+                source_asset.source_path = out_path
+                # I'm not sure why we forced the encrypted files as dirty. The hash stage is after this,
+                # so we should catch any differences. Gonna leave it in, commented out, in case I'm
+                # just not thinking about something. :/
+                #staged_asset.flags |= ManifestFlags.dirty
+            elif current_crypt == desired_crypt and desired_crypt == encryption.Encryption.BTEA:
+                logging.warning(f"Asset '{client_path}' is already droid encrypted??? This will prevent trivial key changes.")
+            elif current_crypt != desired_crypt:
+                raise AssetError(f"Asset '{source_asset.source_path}' was pre-encrypted incorrectly. Please decrypt it manually.")
 
 def hash_staged_assets(source_assets, staged_assets, ncpus=None):
     logging.info("Hashing all staged assets...")

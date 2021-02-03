@@ -152,7 +152,7 @@ def generate(args):
         commit.copy_server_assets(source_assets, staged_assets, server_age_path_in, server_sdl_path_in,
                                   server_age_path_out, server_sdl_path_out, ncpus)
 
-        commit.encrypt_staged_assets(source_assets, staged_assets, temp_path, droid_key)
+        commit.encrypt_staged_assets(source_assets, staged_assets, temp_path, droid_key, ncpus)
         commit.hash_staged_assets(source_assets, staged_assets, ncpus)
         commit.find_dirty_assets(cached_db.assets, staged_assets)
 
