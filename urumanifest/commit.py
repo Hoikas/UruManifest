@@ -165,11 +165,22 @@ def find_dirty_assets(cached_assets, staged_assets):
     cached_set = frozenset(cached_assets.keys())
     staged_set = frozenset((cp for cp, sa in staged_assets.items() if not sa.flags & ManifestFlags.consumable))
     all_assets = frozenset(itertools.chain(cached_set, staged_set))
-    dirty_assets = frozenset((cp for cp, sa in staged_assets.items() if sa.flags & ManifestFlags.dirty))
+    dirty_assets = frozenset((cp for cp, sa in staged_assets.items() if sa.flags & ManifestFlags.dirty and not sa.flags & ManifestFlags.consumable))
     added_assets = staged_set - cached_set
     deleted_assets = cached_set - staged_set
     changed_assets = dirty_assets - added_assets - deleted_assets
     logging.info(f"{len(dirty_assets)} assets dirty of {len(all_assets)}: {len(added_assets)} added, {len(changed_assets)} changed, {len(deleted_assets)} deleted.")
+
+    def dump_set(set_type, the_set):
+        if the_set:
+            logging.debug(f"--- BEGIN {set_type} ASSETS ---")
+            for i in the_set:
+                logging.debug(i)
+            logging.debug(f"--- END {set_type} ASSETS ---")
+
+    dump_set("ADDED", added_assets)
+    dump_set("CHANGED", changed_assets)
+    dump_set("DELETED", deleted_assets)
 
 def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key):
     logging.info("Encrypting assets...")
@@ -182,7 +193,7 @@ def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key)
         source_asset = source_assets[client_path]
         current_crypt = encryption.determine(source_asset.source_path)
 
-        if current_crypt == encryption.Encryption.Unspecified:
+        if current_crypt != desired_crypt and current_crypt != encryption.Encryption.BTEA:
             logging.trace(f"Encrypting '{client_path}'...")
 
             kwargs = dict(mode=encryption.Mode.WriteBinary, enc=desired_crypt)
@@ -192,18 +203,18 @@ def encrypt_staged_assets(source_assets, staged_assets, working_path, droid_key)
             out_path = working_path.joinpath(client_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             with encryption.stream(out_path, **kwargs) as out_stream:
-                with source_asset.source_path.open("rb") as in_stream:
+                with encryption.stream(source_asset.source_path, encryption.Mode.ReadBinary) as in_stream:
                     _io_loop(in_stream, out_stream.write)
 
             source_asset.source_path = out_path
-            staged_asset.flags |= ManifestFlags.dirty
-        elif current_crypt == desired_crypt:
-            if desired_crypt == encryption.Encryption.BTEA:
-                logging.warning(f"Asset '{client_path}' is already droid encrypted??? That's a bad idea(TM)...")
-            else:
-                logging.debug(f"Asset '{client_path}' is already encrypted!")
-        else:
-            raise AssetError(f"Incorrect encryption type: {source_asset.source_path}")
+            # I'm not sure why we forced the encrypted files as dirty. The hash stage is after this,
+            # so we should catch any differences. Gonna leave it in, commented out, in case I'm
+            # just not thinking about something. :/
+            #staged_asset.flags |= ManifestFlags.dirty
+        elif current_crypt == desired_crypt and desired_crypt == encryption.Encryption.BTEA:
+            logging.warning(f"Asset '{client_path}' is already droid encrypted??? This will prevent trivial key changes.")
+        elif current_crypt != desired_crypt:
+            raise AssetError(f"Asset '{source_asset.source_path}' was pre-encrypted incorrectly. Please decrypt it manually.")
 
 def hash_staged_assets(source_assets, staged_assets, ncpus=None):
     logging.info("Hashing all staged assets...")

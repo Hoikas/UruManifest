@@ -377,9 +377,10 @@ class plAge:
 
     @property
     def common_pages(self):
-        # uint8_t me
-        yield "BuiltIn"
-        yield "Textures"
+        # Global "Ages" probably don't have common pages, so we omit.
+        if self._prefix >= 0:
+            yield "BuiltIn"
+            yield "Textures"
 
     @property
     def all_pages(self):

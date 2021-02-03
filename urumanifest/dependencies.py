@@ -237,7 +237,7 @@ def _find_script_sdl_dependencies(sdl_mgrs, descriptor_name, optional=False):
             elif not optional:
                 raise AssetError(f"Top-level SDL '{descriptor_name}' is missing.")
             else:
-                logging.debug(f"Optional SDL Descriptor '{descriptor_name}' not found...")
+                logging.trace(f"Optional SDL Descriptor '{descriptor_name}' not found.")
         return dependencies, descriptors
     return find_sdls(sdl_mgrs, descriptor_name, optional=optional)[0]
 
