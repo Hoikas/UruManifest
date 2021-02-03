@@ -31,7 +31,7 @@ class ListEntry:
     file_size : int = 0
 
 
-@dataclass
+@dataclass(unsafe_hash=True)
 class ManifestEntry:
     file_name : Path = Path()
     download_name : Path = Path()

@@ -16,8 +16,10 @@
 import argparse
 from collections import defaultdict
 import functools
+import itertools
 import logging
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import time
@@ -54,6 +56,7 @@ generate_parser = sub_parsers.add_parser("generate")
 method_group = generate_parser.add_mutually_exclusive_group()
 method_group.add_argument("--dry-run", action="store_true", default=False, help="don't produce any output")
 method_group.add_argument("--force", action="store_true", default=False, help="force regeneration of all files")
+method_group.add_argument("--stage", action="store_true", default=False, help="stage the delta into the staging directory")
 generate_parser.add_argument("--reuse-python", action="store_true", default=False, help="skip regeneration of python.pak and reuse existing generated python assets")
 generate_parser.add_argument("--threads", type=int, help="maximum worker thread count", default=0)
 
@@ -67,23 +70,46 @@ def generate(args):
     try:
         db_type = config.get("server", "type")
 
-        mfs_path = config.getoutdirpath("output", "manifests")
-        list_path = config.getoutdirpath("output", "lists")
+        mfs_path_in = config.getoutdirpath("output", "manifests")
+        list_path_in = config.getoutdirpath("output", "lists")
+        server_age_path_in = config.getoutdirpath("server", "age_directory")
+        server_sdl_path_in = config.getoutdirpath("server", "sdl_directory")
+        if args.stage:
+            mfs_path_out = config.getoutdirpath("stage", "manifests")
+            list_path_out = config.getoutdirpath("stage", "lists")
+            server_age_path_out = config.getoutdirpath("stage", "age_directory")
+            server_sdl_path_out = config.getoutdirpath("stage", "sdl_directory")
+        else:
+            mfs_path_out, list_path_out = mfs_path_in, list_path_in
+            server_age_path_out, server_sdl_path_out = server_age_path_in, server_sdl_path_in
 
         game_data_path = config.getindirpath("source", "data_path")
         game_scripts_path = config.getindirpath("source", "scripts_path")
         gather_path = config.getindirpathopt("source", "gather_path")
 
-        server_age_path = config.getoutdirpath("server", "age_directory")
         droid_key = utils.get_droid_key(config.get("server", "droid_key"))
-        server_sdl_path = config.getoutdirpath("server", "sdl_directory")
         make_preloader_mfs = config.getboolean("server", "secure_manifest")
 
         py_version = (config.getint("python", "major"), config.getint("python", "minor"))
         py_exe = config.getinfilepathopt("python", "path")
-    except ValueError as e:
+    except Exception as e:
         # reraise as AssetError so config errors look sane.
         raise assets.AssetError(f"Config problem: {e}")
+
+    # If we are staging, we'll want to clear out the contents of the staging paths.
+    if args.stage:
+        logging.info("Clearing staging directories...")
+        staging_dirs = [mfs_path_out.iterdir(), list_path_out.iterdir()]
+        if server_age_path_out:
+            staging_dirs.append(server_age_path_out.iterdir())
+        if server_sdl_path_out:
+            staging_dirs.append(server_sdl_path_out.iterdir())
+        for i in itertools.chain.from_iterable(staging_dirs):
+            if i.exists() and i.is_dir():
+                shutil.rmtree(i)
+            else:
+                i.unlink(missing_ok=True)
+        logging.warn("No output will be staged for DELETED content.")
 
     # Find python2-compatible schtuff
     if py_exe and py_exe.is_file() and utils.check_python_version(py_exe, py_version):
@@ -95,7 +121,7 @@ def generate(args):
     if not py_exe:
         logging.critical(f"Could not find Python {py_version[0]}.{py_version[1]}")
 
-    cached_db = assets.load_asset_database(mfs_path, list_path, db_type)
+    cached_db = assets.load_asset_database(mfs_path_in, list_path_in, db_type)
     prebuilts = assets.load_prebuilt_assets(game_data_path, game_scripts_path, py_exe)
     gathers = assets.load_gather_assets(gather_path)
     source_assets = assets.merge_asset_dicts(prebuilts, gathers)
@@ -109,11 +135,11 @@ def generate(args):
     with tempfile.TemporaryDirectory() as td:
         temp_path = Path(td)
         if args.dry_run:
-            list_path, mfs_path = temp_path, temp_path
+            list_path_out, mfs_path_out = temp_path, temp_path
 
             # dry-run forces these files to be copied for testing purposes
-            server_age_path = temp_path.joinpath("server_age_files")
-            server_sdl_path = temp_path.joinpath("server_sdl_files")
+            server_age_path_out = temp_path.joinpath("server_age_files")
+            server_sdl_path_out = temp_path.joinpath("server_sdl_files")
 
         if args.reuse_python:
             # Dry runs can overwrite the list output path with a temp location. We want to use the
@@ -123,9 +149,8 @@ def generate(args):
         else:
             plasma_python.process(source_assets, staged_assets, temp_path, droid_key, py_exe, py_version)
 
-        # Best to go ahead and copy the assets over to the server before anything is encrypted.
-        # That way, we don't spin-wash encrypt then decrypt.
-        commit.copy_server_assets(source_assets, staged_assets, server_age_path, server_sdl_path)
+        commit.copy_server_assets(source_assets, staged_assets, server_age_path_in, server_sdl_path_in,
+                                  server_age_path_out, server_sdl_path_out, ncpus)
 
         commit.encrypt_staged_assets(source_assets, staged_assets, temp_path, droid_key)
         commit.hash_staged_assets(source_assets, staged_assets, ncpus)
@@ -136,14 +161,14 @@ def generate(args):
         manifests = commit.merge_manifests(age_manifests, client_manifests, secure_manifests)
 
         commit.compress_dirty_assets(manifests, cached_db.assets, source_assets, staged_assets,
-                                     mfs_path, args.force, ncpus)
-        if not args.dry_run:
-            commit.copy_secure_assets(secure_lists, source_assets, staged_assets, list_path)
-        commit.nuke_unstaged_assets(cached_db, staged_assets, mfs_path, list_path)
+                                     mfs_path_out, args.force, ncpus)
+        commit.copy_secure_assets(secure_lists, source_assets, staged_assets, list_path_in, list_path_out,
+                                  droid_key, ncpus)
+        commit.nuke_unstaged_assets(cached_db, staged_assets, mfs_path_out, list_path_out)
         assets.nuke_dead_manifests(cached_db.manifests, cached_db.lists, manifests, secure_lists,
-                                   mfs_path, list_path, db_type)
-        assets.save_asset_database(staged_assets, manifests, secure_lists, mfs_path, list_path,
-                                   db_type, droid_key)
+                                   mfs_path_out, list_path_out, db_type)
+        assets.save_asset_database(cached_db.manifests, cached_db.lists, staged_assets, manifests,
+                                   secure_lists, mfs_path_out, list_path_out, db_type, droid_key)
 
     return True
 

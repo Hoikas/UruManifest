@@ -42,6 +42,13 @@ _defaults = {
             "Directory to output file server manifests and downloads."),
     },
 
+    "stage": {
+        "lists": _ConfigItem("~/uru/staging/authsrv", "Staging directory for output.lists"),
+        "manifests": _ConfigItem("~/uru/staging/authsrv", "Staging directory for output.manifests"),
+        "age_directory": _ConfigItem("", "Staging directory for server.age_directory"),
+        "sdl_directory": _ConfigItem("", "Staging directory for server.sdl_directory"),
+    },
+
     "python": {
         "major": _ConfigItem("2", "Major version of the Python interpreter used by the game client."),
         "minor": _ConfigItem("7", "Minor version of the Python interpreter used by the game client."),

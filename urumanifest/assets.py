@@ -21,7 +21,7 @@ import logging
 from pathlib import Path, PureWindowsPath
 import subprocess
 import sys
-from typing import Sequence
+from typing import Any, Dict, Sequence, Union
 
 from constants import *
 import manifest
@@ -251,28 +251,59 @@ def nuke_dead_manifests(cached_manifests, cached_lists, staged_manifests, staged
     if dead_lists:
         db_cls.delete_lists(list_path, *dead_lists)
 
-def save_asset_database(staged_assets, manifests, lists, mfs_path, list_path, db_type, droid_key):
+def save_asset_database(cached_manifests, cached_lists, staged_assets, staged_manifests, staged_lists,
+                        mfs_path, list_path, db_type, droid_key):
     logging.info("Saving asset database...")
 
+    def dump_set(set_type, the_set):
+        if the_set:
+            logging.debug(f"--- BEGIN {set_type} ASSETS ---")
+            for i in the_set:
+                logging.debug(i)
+            logging.debug(f"--- END {set_type} ASSETS ---")
+
     def iter_manifest(mfs_name):
-        for client_path in manifests[mfs_name]:
+        for client_path in staged_manifests[mfs_name]:
             yield staged_assets[client_path]
 
         # Some manifests may also want to hijack the contents of another manifest.
         # We do that here because, in some cases (eg ExternalPatcher), order is important.
         # NOTE: no recursive copying. just no. *shudder*
         for copy_mfs_name in manifest_copy_from.get(mfs_name, []):
-            for client_path in manifests.get(copy_mfs_name, []):
+            for client_path in staged_manifests.get(copy_mfs_name, []):
                 yield staged_assets[client_path]
 
     def iter_secure_list(key):
-        for client_path in lists[key]:
+        for client_path in staged_lists[key]:
             staged_asset = staged_assets[client_path]
             yield manifest.ListEntry(staged_asset.file_name, staged_asset.file_size)
 
-    db_cls = manifest.ManifestDB.get(db_type)
-    for i in manifests.keys():
-        db_cls.write_manifest(mfs_path, i, iter_manifest(i))
+    def is_manifest_dirty(name : str,
+                          cached_manifest : Dict[Path, Any], # really an "asset" from above
+                          staged_manifest : Sequence[manifest.ManifestEntry]) -> bool:
+        assert cached_manifest or staged_manifest, "Got a pair of deleted manifests?"
 
-    lists_contents = { key: tuple(iter_secure_list(key)) for key in lists.keys() }
+        cached_contents = frozenset(i.file_name for i in cached_manifest)
+        staged_contents = frozenset(i.file_name for i in staged_manifest)
+        dirty_contents = frozenset(i.file_name for i in staged_manifest if i.flags & ManifestFlags.dirty)
+        added_contents = staged_contents - cached_contents
+        deleted_contents = cached_contents - staged_contents
+
+        if dirty_contents or added_contents or deleted_contents:
+            status = "new" if not cached_manifest else "dirty"
+            logging.debug(f"Manifest '{name}' is {status}: {len(added_contents)} added, {len(dirty_contents)} changed, {len(deleted_contents)} deleted.")
+            dump_set("ADDED", added_contents)
+            dump_set("CHANGED", dirty_contents)
+            dump_set("DELETED", deleted_contents)
+            return True
+        return False
+
+    db_cls = manifest.ManifestDB.get(db_type)
+    for i in staged_manifests.keys():
+        staged_manifest = set(iter_manifest(i))
+        if is_manifest_dirty(i, cached_manifests.get(i, {}), staged_manifest):
+            db_cls.write_manifest(mfs_path, i, staged_manifest)
+
+    # Note... lists are always dirty because they do not contain file hashes.
+    lists_contents = { key: tuple(iter_secure_list(key)) for key in staged_lists.keys() }
     db_cls.write_lists(list_path, droid_key, lists_contents)

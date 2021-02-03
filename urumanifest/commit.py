@@ -13,16 +13,18 @@
 #    You should have received a copy of the GNU General Public License
 #    along with UruManifest.  If not, see <http://www.gnu.org/licenses/>.
 
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 import concurrent.futures
 import functools
 import gzip
-from hashlib import md5
+import hashlib
 import itertools
 import logging
+from os import PathLike
 from pathlib import Path
 import shutil
 import tempfile
+from typing import Tuple, Union
 
 from assets import Asset, AssetError
 from constants import *
@@ -37,27 +39,42 @@ def _compress_asset(client_path, source_path, output_path):
         with gzip.open(output_path, "wb") as gz_stream:
             _io_loop(in_stream, gz_stream.write)
     with output_path.open("rb") as in_stream:
-        h = md5()
+        h = hashlib.md5()
         _io_loop(in_stream, h.update)
     return h.hexdigest(), output_path.stat().st_size
 
-def _copy_asset(args):
-    source_path, output_path, client_path = args
-    asset_output_path = output_path.joinpath(client_path)
-    asset_output_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        shutil.copy2(source_path, asset_output_path)
-    except shutil.SameFileError:
-        # Hmmm...
-        pass
-    return client_path, asset_output_path.stat().st_size
-
 def _hash_asset(args):
     client_path, source_path = args
-    h = md5()
+    # One day, we will not use such a vulnerable hashing algo...
+    h = hashlib.md5()
     with source_path.open("rb") as in_stream:
         _io_loop(in_stream, h.update)
     return client_path, h.hexdigest(), source_path.stat().st_size
+
+def _compare_files(newFile : Path, prevFile : Path, *, key=None) -> bool:
+    if not prevFile.exists() or not newFile.exists():
+        return False
+    oldSize = prevFile.stat().st_size if prevFile.is_file() else 0
+    newSize = newFile.stat().st_size if newFile.is_file() else 0
+    if oldSize != newSize:
+        return False
+
+    # Optimization: if the two files have the same encryption type, we can just hash them directly.
+    # Otherwise, we need to decrypt for hashing. This is primarily to avoid decrypting python.pak
+    # twice in the same thread immediately after we spent a buttload of time encrypting it.
+    # Will be a moot point if the encryption module ever gets rewritten in C or something.
+    if encryption.determine(prevFile) == encryption.determine(newFile):
+        opener = functools.partial(open, mode="rb")
+    else:
+        opener = functools.partial(encryption.stream, mode=encryption.Mode.ReadBinary, key=key)
+
+    prevHash = hashlib.sha512()
+    with opener(prevFile) as s:
+        _io_loop(s, prevHash.update)
+    newHash = hashlib.sha512()
+    with opener(newFile) as s:
+        _io_loop(s, newHash.update)
+    return prevHash.digest() == newHash.digest()
 
 def _io_loop(in_stream, out_func):
     while True:
@@ -106,45 +123,73 @@ def compress_dirty_assets(manifests, cached_assets, source_assets, staged_assets
                 staged_asset.download_hash = cached_asset.download_hash
                 staged_asset.download_size = cached_asset.download_size
 
-def copy_secure_assets(secure_lists, source_assets, staged_assets, output_path, ncpus=None):
+def copy_secure_assets(secure_lists, source_assets, staged_assets, input_path, output_path, droid_key, ncpus=None):
     logging.info("Copying secure assets...")
 
-    # Sadly, the so-called "secure lists" do not store hashes. So, we must unconditionally copy
-    # every single fracking time. SIGH.
     secure_assets = set(itertools.chain.from_iterable(secure_lists.values()))
 
-    with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
-        asset_iter = ((source_assets[i].source_path, output_path, i)
-                      for i in secure_assets)
-        for client_path, size in executor.map(_copy_asset, asset_iter, chunksize=64):
-            logging.trace(f"{client_path}: {size}")
-            staged_assets[client_path].file_size = size
+    def copy_asset(asset_source_path, asset_output_path, client_path, future):
+        size = asset_source_path.stat().st_size
+        staged_assets[client_path].file_size = size
+        if not future.result():
+            asset_output_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copy2(asset_source_path, asset_output_path)
+            except shutil.SameFileError:
+                # Hmmm...
+                pass
+            else:
+                logging.debug(f"Copied {client_path} ({size:n} bytes)")
 
-def copy_server_assets(source_assets, staged_assets, age_path, sdl_path):
+    with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
+        # Only copy over things that we can verify have changed to better enable staging changesets.
+        # Sadly, due to the fact that these are "secure lists" we cannot rely on every server knowing
+        # the hash of the asset (ironic, right?) - so we have to hash against whatever the server has
+        # lying around. Gulp.
+        for client_path in secure_assets:
+            asset_input_path = input_path.joinpath(client_path)
+            asset_output_path = output_path.joinpath(client_path)
+            asset_source_path = source_assets[client_path].source_path
+            fut = executor.submit(_compare_files, asset_source_path, asset_input_path, key=droid_key)
+            fut.add_done_callback(functools.partial(copy_asset, asset_source_path, asset_output_path, client_path))
+
+def copy_server_assets(source_assets, staged_assets, age_path_in, sdl_path_in, age_path_out, sdl_path_out, ncpus=None):
     logging.info("Copying core assets to server directories...")
 
-    def copy_asset_template(asset_category, asset_suffix, output_path):
+    # source_path: the definitive copy of this asset that we want to ship (always exists)
+    # input_path: the path to the current asset on the server (may or may not exist)
+    # output_put: the destination path we will copy `source_path` to - might or might not be the same as `input_path`
+    ServerAsset = namedtuple("ServerAsset", ["source_path", "input_path", "output_path"])
+
+    def discover_server_assets(asset_category, asset_suffix, input_path, output_path):
         for client_path, asset in source_assets.items():
             if asset_category in asset.categories and client_path.suffix.lower() == asset_suffix:
-                copy_asset(asset.source_path, output_path)
+                yield ServerAsset(asset.source_path, input_path.joinpath(client_path.name), output_path.joinpath(client_path.name))
 
-    def copy_asset(asset_source_path, output_path):
-        asset_output_path = output_path.joinpath(asset_source_path.name)
-        if encryption.determine(asset_source_path) != encryption.Encryption.Unspecified:
-            logging.trace(f"Decrypting '{asset_source_path.name}' for the server.")
-            with encryption.stream(asset_source_path, encryption.Mode.ReadBinary) as in_stream:
-                with asset_output_path.open("wb") as out_stream:
-                    _io_loop(in_stream, out_stream.write)
-        else:
-            logging.trace(f"Copying '{asset_source_path.name}' for the server.")
-            shutil.copy2(asset_source_path, asset_output_path)
+    def copy_asset(asset_source_path, asset_output_path, fut):
+        if not fut.result():
+            asset_output_path.parent.mkdir(parents=True, exist_ok=True)
+            if encryption.determine(asset_source_path) != encryption.Encryption.Unspecified:
+                logging.debug(f"Decrypting '{asset_source_path.name}' for the server.")
+                with encryption.stream(asset_source_path, encryption.Mode.ReadBinary) as in_stream:
+                    with asset_output_path.open("wb") as out_stream:
+                        _io_loop(in_stream, out_stream.write)
+            else:
+                logging.debug(f"Copying '{asset_source_path.name}' for the server.")
+                shutil.copy2(asset_source_path, asset_output_path)
 
-    if age_path:
-        age_path.mkdir(exist_ok=True, parents=True)
-        copy_asset_template("data", ".age", age_path)
-    if sdl_path:
-        sdl_path.mkdir(exist_ok=True, parents=True)
-        copy_asset_template("sdl", ".sdl", sdl_path)
+    server_assets = []
+    if age_path_in and age_path_out:
+        server_assets.extend(discover_server_assets("data", ".age", age_path_in, age_path_out))
+    if sdl_path_in and sdl_path_out:
+        server_assets.extend(discover_server_assets("sdl", ".sdl", sdl_path_in, sdl_path_out))
+    if not server_assets:
+        return
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
+        for server_asset in server_assets:
+            fut = executor.submit(_compare_files, server_asset.source_path, server_asset.input_path)
+            fut.add_done_callback(functools.partial(copy_asset, server_asset.source_path, server_asset.output_path))
 
 def find_dirty_assets(cached_assets, staged_assets):
     logging.info("Comparing asset hashes...")

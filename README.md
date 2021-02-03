@@ -21,7 +21,7 @@ UruManifest uses a configuration file to facillitate iteration. To generate a de
 
 UruManifest assumes you will be using the standard moul-scripts and moul-assets repositories to generate your file server. If this is not the case, you should familize yourself with the layout of these repositories due to this assumption.
 
-When you are ready to generate your file server, you may do so by executing `python urumanifest generate`. The `--dry-run` argument may be specified to simulate the generation of a file server. Note that this is an argument of the `generate` command, so the proper specification is `python urumanifest generate --dry-run`.
+When you are ready to generate your file server, you may do so by executing `python urumanifest generate`. The `--dry-run` argument may be specified to simulate the generation of a file server. Note that this is an argument of the `generate` command, so the proper specification is `python urumanifest generate --dry-run`. Additionally, the `--stage` argument can be used to stage the changes to the server in another directory tree.
 
 Note that UruManifest assumes that it owns the output. You should never tweak it manually. Additionally, if you already have a generated file server via another method, it is suggested that you discard this and allow UruManifest to generate the file server afresh to prevent conflicts. If the output every needs to be completely regenerated, use the `--force` argument.
 
