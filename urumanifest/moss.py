@@ -15,13 +15,13 @@
 
 import codecs
 import logging
+import io
 import itertools
 import os
 from pathlib import Path, PureWindowsPath
-from PyHSPlasma import *
+import struct
 
 import manifest
-import utils
 
 _utf16 = codecs.lookup("utf-16_le")
 
@@ -49,10 +49,10 @@ class MOSS(manifest.ManifestDB):
         return manifests, lists
 
     @classmethod
-    def _read_wstr(cls, s):
+    def _read_wstr(cls, s : io.IOBase) -> str:
         def _read_wchars():
             while True:
-                wc = s.readShort()
+                wc = struct.unpack("<H", s.read(2))[0]
                 if not wc:
                     break
                 yield wc
@@ -61,12 +61,12 @@ class MOSS(manifest.ManifestDB):
         return _utf16.decode(bytes(buf))[0]
 
     @classmethod
-    def _read_int(cls, s):
+    def _read_int(cls, s : io.IOBase) -> int:
         buf = s.read(4)
         swapped = bytearray(len(buf))
         swapped[0::2] = buf[1::2]
         swapped[1::2] = buf[0::2]
-        assert s.readShort() == 0
+        assert struct.unpack("H", s.read(2))[0] == 0, "Expected a nul-terminator after integer"
         return int.from_bytes(bytes(swapped), byteorder="big")
 
     @classmethod
@@ -82,12 +82,11 @@ class MOSS(manifest.ManifestDB):
     def read_list(cls, path):
         logging.debug(f"Reading secure list: {path}")
 
-        with hsFileStream().open(path, fmRead) as s:
-            if not s.size:
-                logging.error(f"List '{path.name}' is empty!")
-                return
-
-            while s.pos < s.size:
+        size = path.stat().st_size
+        with open(path, "rb") as s:
+            for i in itertools.count():
+                if s.tell() == size:
+                    break
                 try:
                     entry = manifest.ListEntry()
                     entry.file_name = Path(PureWindowsPath(cls._read_wstr(s)))
@@ -105,21 +104,17 @@ class MOSS(manifest.ManifestDB):
     def read_manifest(cls, path):
         logging.debug(f"Reading manifest: {path.name}")
 
-        with hsFileStream().open(path, fmRead) as s:
-            if not s.size:
-                logging.error(f"Manifest '{path.name}' is empty!")
-                return
-
-            num_entries = s.readInt()
+        with open(path, "rb") as s:
+            num_entries = struct.unpack("<I", s.read(4))[0]
             logging.trace(f"{num_entries} entries")
             for i in range(num_entries):
                 try:
-                    length = s.readInt()
+                    length = struct.unpack("<I", s.read(4))[0]
                 except IOError:
                     logging.error(f"Manifest '{path.name}' unexpected EOF at entry {i}.")
                     return
                 else:
-                    endpos = s.pos + length
+                    endpos = s.tell() + length
 
                 try:
                     entry = manifest.ManifestEntry()
@@ -134,11 +129,11 @@ class MOSS(manifest.ManifestDB):
                     logging.error(f"Malformed manifest '{path.name}' entry {i}")
                 else:
                     logging.trace(manifest.pformat(entry))
-                    if s.pos != endpos:
+                    if s.tell() != endpos:
                         logging.warning(f"Hmmm... Manifest '{path.name}' entry {i} underrun.")
                     yield entry
                 finally:
-                    if s.pos != endpos:
+                    if s.tell() != endpos:
                         s.seek(endpos)
 
     @classmethod
@@ -147,7 +142,7 @@ class MOSS(manifest.ManifestDB):
             value = str(value)
         buf = _utf16.encode(value)[0]
         s.write(buf)
-        s.writeShort(0)
+        s.write(bytes([0, 0]))
 
     @classmethod
     def _write_int(cls, s, value):
@@ -156,7 +151,7 @@ class MOSS(manifest.ManifestDB):
         swapped[0::2] = buf[1::2]
         swapped[1::2] = buf[0::2]
         s.write(bytes(swapped))
-        s.writeShort(0)
+        s.write(bytes([0, 0]))
 
     @classmethod
     def _write_droid_key(cls, path, droid_key):
@@ -164,7 +159,7 @@ class MOSS(manifest.ManifestDB):
         out_path.parent.mkdir(parents=True, exist_ok=True)
         logging.debug(f"Writing NTD key: {out_path}")
 
-        with hsFileStream().open(out_path, fmWrite) as s:
+        with open(out_path, "wb") as s:
             for key in droid_key:
                 s.write(key.to_bytes(length=4, byteorder="little"))
 
@@ -174,7 +169,7 @@ class MOSS(manifest.ManifestDB):
         out_path.parent.mkdir(parents=True, exist_ok=True)
         logging.debug(f"Writing secure list: {out_path}")
 
-        with hsFileStream().open(out_path, fmWrite) as s:
+        with open(out_path, "wb") as s:
             for entry in entries:
                 cls._write_wstr(s, entry.file_name)
                 cls._write_int(s, entry.file_size)
@@ -195,10 +190,10 @@ class MOSS(manifest.ManifestDB):
         # Manifest entries are provided by a generator, so collect them here.
         entries = tuple(entries)
 
-        with hsFileStream().open(out_path, fmCreate) as s:
-            s.writeInt(len(entries))
+        with open(out_path, "wb") as s:
+            s.write(struct.pack("<I", len(entries)))
             for entry in entries:
-                entryS = hsRAMStream()
+                entryS = io.BytesIO()
                 cls._write_wstr(entryS, PureWindowsPath(entry.file_name))
                 cls._write_wstr(entryS, PureWindowsPath(entry.download_name))
                 cls._write_wstr(entryS, entry.file_hash)
@@ -207,6 +202,7 @@ class MOSS(manifest.ManifestDB):
                 cls._write_int(entryS, entry.download_size)
                 cls._write_int(entryS, entry.flags & 0xFFFF)
 
-                s.writeInt(entryS.size)
-                s.write(entryS.buffer)
+                buffer = entryS.getvalue()
+                s.write(struct.pack("<I", len(buffer)))
+                s.write(buffer)
 
