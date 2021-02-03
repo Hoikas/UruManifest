@@ -198,7 +198,6 @@ if __name__ == "__main__":
         logging_kwargs["handlers"] = (file_handler, stream_handler)
     logging.basicConfig(**logging_kwargs)
     logging.debug(f"{program_description} __main__...")
-    logging.trace("harro!")
 
     try:
         # Go go go
