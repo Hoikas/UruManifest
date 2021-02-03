@@ -21,14 +21,14 @@ import py2constants
 
 client_sdl = frozenset((
     "AGMaster",
-    "Avatar",
-    "AvatarPhysical",
+    "avatar",
+    "avatarPhysical",
     "CloneMessage",
-    "Clothing",
+    "clothing",
     "Layer",
     "MorphSequence",
     "ParticleSystem",
-    "Physical",
+    "physical",
     "Responder",
     "Sound",
     "XRegion",

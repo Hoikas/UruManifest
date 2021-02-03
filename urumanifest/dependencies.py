@@ -20,13 +20,13 @@ import io
 import itertools
 import logging
 from pathlib import Path
-from PyHSPlasma import *
 import subprocess
 
 from assets import AssetError
 from constants import *
 import encryption
 import manifest
+import plasma_sdl
 import plasmoul
 
 def find_age_dependencies(source_assets, staged_assets, ncpus=None):
@@ -218,27 +218,26 @@ def _find_script_sdl_dependencies(sdl_mgrs, descriptor_name, optional=False):
         descriptors = set()
 
         for sdl_file, mgr in sdl_mgrs.items():
-            descriptor = mgr.getDescriptor(descriptor_name)
-            if descriptor is not None:
-                break
-        else:
+            # Be sure to loop over all files in case someone moves a record to a new file
+            # from version to version. Please don't do that, though. It's mean :<
+            for descriptor in mgr.find_descriptors(descriptor_name):
+                dependencies.add(sdl_file)
+                descriptors.add(descriptor.name)
+
+                # We need to see if there are any embedded state descriptor variables...
+                sdrs = (i for i in descriptor.variables if i.descriptor is not None and i.descriptor not in descriptors)
+                for variable in sdrs:
+                    more_dependencies, more_descriptors = find_sdls(sdl_mgrs, variable.descriptor, True)
+                    dependencies.update(more_dependencies)
+                    descriptors.update(more_descriptors)
+
+        if descriptor_name not in descriptors:
             if embedded_sdr:
                 raise AssetError(f"Embedded SDL Descriptor '{descriptor_name}' is missing.")
             elif not optional:
                 raise AssetError(f"Top-level SDL '{descriptor_name}' is missing.")
             else:
                 logging.debug(f"Optional SDL Descriptor '{descriptor_name}' not found...")
-            return dependencies, descriptors
-
-        dependencies.add(sdl_file)
-        descriptors.add(descriptor.name)
-
-        # We need to see if there are any embedded state descriptor variables...
-        for variable in descriptor.variables:
-            if variable.type == plVarDescriptor.kStateDescriptor and not variable.stateDescType in descriptors:
-                more_dependencies, more_descriptors = find_sdls(sdl_mgrs, variable.stateDescType, True)
-                dependencies.update(more_dependencies)
-                descriptors.update(more_descriptors)
         return dependencies, descriptors
     return find_sdls(sdl_mgrs, descriptor_name, optional=optional)[0]
 
@@ -254,7 +253,5 @@ def _load_sdl_descriptors(assets):
             raise AssetError(f"SDL File '{asset.source_path.name}' is encrypted and cannot be used for packaging.")
             continue
 
-        mgr = plSDLMgr()
-        mgr.readDescriptors(asset.source_path)
-        sdl_mgrs[client_path] = mgr
+        sdl_mgrs[client_path] = plasma_sdl.Manager(asset.source_path)
     return sdl_mgrs
