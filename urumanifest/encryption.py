@@ -330,3 +330,36 @@ def determine(filename : Union[str, bytes, PathLike]) -> Encryption:
             return Encryption.Unspecified
         else:
             return _Encryptions.get(magic, Encryption.Unspecified)
+
+# Benchmarking code ahoy!
+if __name__ == "__main__":
+    import argparse
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(description="encryption benchmark utility")
+    parser.add_argument("-e", "--encryption", type=Encryption, default=Encryption.BTEA, help="encryption type")
+    parser.add_argument("-r", "--roundtrip", action="store_true", default=False, help="read back in the written data")
+    parser.add_argument("-n", "--number", type=int, default=5, help="number of iterations")
+    args = parser.parse_args()
+
+    def test():
+        with stream(path, Mode.WriteBinary, enc=args.encryption, key=key) as s:
+            s.write(data)
+        if args.roundtrip:
+            with stream(path, Mode.ReadBinary, enc=args.encryption, key=key) as s:
+                s.read()
+
+    import tempfile
+    import timeit
+
+    path = Path(tempfile.mktemp(suffix=".fni"))
+    key = "31415926535897932384626433832795" if args.encryption == Encryption.BTEA else None
+    data = bytes([1, 2, 3, 4, 5, 6, 7, 8, 9, 0] * 50000) # .5 metric megabyte
+
+    print(f"Here we go... Running it {args.number:n} time(s).")
+    try:
+        time = timeit.timeit(stmt="test()", number=args.number, globals=globals())
+        per_iter = time / args.number
+        print(f"Total: {time:.05} s ({args.number:n} iterations), {per_iter:.05} s per iteration.")
+    finally:
+        path.unlink()
