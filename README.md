@@ -18,8 +18,8 @@ Clone the repository into the directory of your choice. For the best performance
 to build UruManifest's crypto module by executing `pip3 install .` from the directory that you
 cloned the project into. Note that this module uses pybind11 and therefore requires a C++11
 compliant compiler. This is module optional, however, and UruManifest will function correctly albiet
-more slowly without it. If you are using Python 3.6 and are not building the module, then you will
-need to manually install the `dataclasses` backport from Python 3.7 by executing `pip3 install dataclasses`.
+more slowly without it. If you are using Python 3.6, then you *must* install the `dataclasses`
+backport from Python 3.7 by executing `pip3 install -r requirements.txt`.
 
 Additionally, to build a Python.pak for your shard, you will need to have the version of Python used
 by Uru itself. For H-uru based Uru clients, this is Python 3.8 (or higher). For Cyan's Myst Online:
