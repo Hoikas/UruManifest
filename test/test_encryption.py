@@ -17,7 +17,9 @@ import abc
 import contextlib
 from pathlib import Path
 import struct
+import sys
 import tempfile
+import time
 from typing import Union
 import unittest
 
@@ -31,6 +33,17 @@ _TestData = [
 ]
 
 class _EncryptionTest(abc.ABC):
+    def setUp(self):
+        self.start_time = time.perf_counter()
+
+    def tearDown(self):
+        print(f"{time.perf_counter() - self.start_time:.3f}s", end=" ")
+        sys.stdout.flush()
+
+    @property
+    def extra_args(self):
+        return {}
+
     @property
     @abc.abstractmethod
     def stream_key(self):
@@ -50,6 +63,7 @@ class _EncryptionTest(abc.ABC):
             read_mode = encryption.Mode.ReadText
             write_mode = encryption.Mode.WriteText
             kwargs["encoding"] = "utf-8"
+        kwargs.update(self.extra_args)
 
         fname = Path(tempfile.mktemp(suffix=".fni"))
         try:
@@ -68,6 +82,7 @@ class _EncryptionTest(abc.ABC):
     def _write_test(self):
         fname = Path(tempfile.mktemp(suffix=".fni"))
         kwargs = dict(mode=encryption.Mode.WriteBinary, enc=self.stream_type, key=self.stream_key)
+        kwargs.update(self.extra_args)
         try:
             with encryption.stream(fname, **kwargs) as stream:
                 yield stream
@@ -106,7 +121,13 @@ class _EncryptionTest(abc.ABC):
             stream.write(bytes([0xFF] * 1000000))
 
 
-class XTEAEncryptionTest(_EncryptionTest, unittest.TestCase):
+class _PureTest:
+    @property
+    def extra_args(self):
+        return dict(pure=True)
+
+
+class _XTEAEncryptionTest(_EncryptionTest):
     @property
     def stream_key(self):
         return None
@@ -116,7 +137,7 @@ class XTEAEncryptionTest(_EncryptionTest, unittest.TestCase):
         return encryption.Encryption.XTEA
 
 
-class BTEAEncryptionTest(_EncryptionTest, unittest.TestCase):
+class _BTEAEncryptionTest(_EncryptionTest):
     @property
     def stream_key(self):
         return "31415926535897932384626433832795"
@@ -124,3 +145,9 @@ class BTEAEncryptionTest(_EncryptionTest, unittest.TestCase):
     @property
     def stream_type(self):
         return encryption.Encryption.BTEA
+
+
+class XTEAPureEncryptionTest(_PureTest, _XTEAEncryptionTest, unittest.TestCase): pass
+class XTEACxxEncryptionTest(_XTEAEncryptionTest, unittest.TestCase): pass
+class BTEAPureEncryptionTest(_PureTest, _BTEAEncryptionTest, unittest.TestCase): pass
+class BTEACxxEncryptionTest(_BTEAEncryptionTest, unittest.TestCase): pass

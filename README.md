@@ -6,15 +6,20 @@ Cross platform tool to generate a complete Myst Online: Uru Live file server fro
 assets and gather packages.
 
 ## Dependencies
-- [Python](https://www.python.org)
+- [Python](https://www.python.org) 3.6 or higher
+- [pybind11](https://github.com/pybind11/pybind11)
 
 ## Related Projects
 - [moul-assets](https://github.com/H-uru/moul-assets) - Compiled Uru game assets
 - [Plasma](https://github.com/H-uru/Plasma) - Plasma engine sources, including scripts
 
 ## Installing
-UruManifest requires Python 3.6 or higher. If you are using Python 3.6, you will need to install the
-backport of the `dataclasses` module from Python 3.7 by running `pip install dataclasses`.
+Clone the repository into the directory of your choice. For the best performance, you will need
+to build UruManifest's crypto module by executing `pip3 install .` from the directory that you
+cloned the project into. Note that this module uses pybind11 and therefore requires a C++11
+compliant compiler. This is module optional, however, and UruManifest will function correctly albiet
+more slowly without it. If you are using Python 3.6 and are not building the module, then you will
+need to manually install the `dataclasses` backport from Python 3.7 by executing `pip3 install dataclasses`.
 
 Additionally, to build a Python.pak for your shard, you will need to have the version of Python used
 by Uru itself. For H-uru based Uru clients, this is Python 3.8. For Cyan's Myst Online: Uru Live,

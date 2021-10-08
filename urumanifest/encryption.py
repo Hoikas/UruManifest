@@ -16,7 +16,9 @@
 import abc
 import contextlib
 import enum
+import functools
 import io
+import logging
 from os import PathLike
 import struct
 import sys
@@ -109,10 +111,12 @@ class _Stream(abc.ABC, io.RawIOBase):
 
         buf = bytearray(size)
         bp, lp = 0, self._pos % 8
+        st = struct.Struct("<II")
+        unpack, pack, read, decipher = st.unpack, st.pack, self._handle.read, self.decipher
         while bp < size:
             if lp == 0:
-                myints = self.decipher(struct.unpack("<II", self._handle.read(8)))
-                self._buffer = struct.pack("<II", *myints)
+                myints = decipher(unpack(read(8)))
+                self._buffer = pack(*myints)
             if lp + (size - bp) >= 8:
                 buf[bp:bp+8-lp] = self._buffer[lp:]
                 bp += 8 - lp
@@ -138,14 +142,16 @@ class _Stream(abc.ABC, io.RawIOBase):
 
     def write(self, buf : bytes):
         bp, lp, size = 0, self._pos % 8, len(buf)
+        st = struct.Struct("<II")
+        unpack, pack, write, encipher = st.unpack, st.pack, self._handle.write, self.encipher
         while bp < size:
             if lp + (size - bp) >= 8:
                 self._buffer[lp:] = buf[bp:bp+8-lp]
                 assert len(self._buffer) == 8, (len(self._buffer), bp, lp, size)
 
                 # Flush crypt buffer (unrolled for performance)
-                myints = self.encipher(struct.unpack("<II", self._buffer))
-                self._handle.write(struct.pack("<II", *myints))
+                myints = encipher(unpack(self._buffer))
+                write(pack(*myints))
 
                 bp += 8 - lp
                 lp = 0
@@ -279,6 +285,24 @@ class _BTEAStream(_Stream):
         return tuple(v)
 
 
+_WARNED_ABOUT_C = False
+
+def _wrap_c_crypto(stream: _Stream):
+    global _WARNED_ABOUT_C
+    try:
+        import _urumanifest
+    except ImportError:
+        if not _WARNED_ABOUT_C:
+            logging.warning("_urumanifest C module is not available, using pure Python crypto")
+            _WARNED_ABOUT_C = True
+    else:
+        if isinstance(stream, _XTEAStream):
+            stream.encipher = functools.partial(_urumanifest.xtea_encipher, stream._key)
+            stream.decipher = functools.partial(_urumanifest.xtea_decipher, stream._key)
+        elif isinstance(stream, _BTEAStream):
+            stream.encipher = functools.partial(_urumanifest.btea_encipher, stream._key)
+            stream.decipher = functools.partial(_urumanifest.btea_decipher, stream._key)
+
 @contextlib.contextmanager
 def stream(filename : Union[str, bytes, PathLike],
            mode : Mode, *,
@@ -296,6 +320,9 @@ def stream(filename : Union[str, bytes, PathLike],
     if enc == Encryption.BTEA and key is None:
         raise io.UnsupportedOperation("BTEA encrypted streams require an explicit encryption key")
 
+    # Use the Python encipher/decipher methods
+    pure_python: bool = kwargs.pop("pure", False)
+
     # If no encryption magic was detected, we pretend that it's just a plain old text file.
     if enc == Encryption.Unspecified:
         assert mode in (Mode.ReadBinary, Mode.ReadText)
@@ -307,6 +334,8 @@ def stream(filename : Union[str, bytes, PathLike],
         with open(filename, open_mode) as handle:
             stream_type = _XTEAStream if enc == Encryption.XTEA else _BTEAStream
             stream = stream_type(handle, key)
+            if not pure_python:
+                _wrap_c_crypto(stream)
             try:
                 if mode in (Mode.ReadText, Mode.WriteText):
                     stream = io.TextIOWrapper(stream, **kwargs)
@@ -340,13 +369,15 @@ if __name__ == "__main__":
     parser.add_argument("-e", "--encryption", type=Encryption, default=Encryption.BTEA, help="encryption type")
     parser.add_argument("-r", "--roundtrip", action="store_true", default=False, help="read back in the written data")
     parser.add_argument("-n", "--number", type=int, default=5, help="number of iterations")
+    parser.add_argument("-p", "--pure", action="store_true", help="use pure python crypto")
     args = parser.parse_args()
 
     def test():
-        with stream(path, Mode.WriteBinary, enc=args.encryption, key=key) as s:
+        kwargs = dict(enc=args.encryption, key=key, pure=args.pure)
+        with stream(path, Mode.WriteBinary, **kwargs) as s:
             s.write(data)
         if args.roundtrip:
-            with stream(path, Mode.ReadBinary, enc=args.encryption, key=key) as s:
+            with stream(path, Mode.ReadBinary, **kwargs) as s:
                 s.read()
 
     import tempfile
