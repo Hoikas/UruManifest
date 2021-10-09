@@ -44,7 +44,7 @@ _Encryptions = {
 }
 
 class _Stream(abc.ABC, io.RawIOBase):
-    def __init__(self, handle : io.IOBase, key : Union[Iterable[int], int, str, None]):
+    def __init__(self, handle: io.IOBase, key: Union[Iterable[int], int, str, None]):
         self._init_key(key)
 
         self._handle = handle
@@ -81,7 +81,7 @@ class _Stream(abc.ABC, io.RawIOBase):
     def _readu32(self) -> int:
         return int(struct.unpack("<I", self._handle.read(4))[0])
 
-    def _writeu32(self, value : int):
+    def _writeu32(self, value: int):
         self._handle.write(struct.pack("<I", value))
 
     def _write_header(self):
@@ -101,7 +101,7 @@ class _Stream(abc.ABC, io.RawIOBase):
     def readable(self) -> bool:
         return self._handle.readable()
 
-    def read(self, size : int = -1) -> bytes:
+    def read(self, size: int = -1) -> bytes:
         # Encrypted in blocks of two unsigned 32-bit integers
         if size < 0:
             size = self._size - self._pos
@@ -131,7 +131,7 @@ class _Stream(abc.ABC, io.RawIOBase):
     def readall(self) -> bytes:
         return self.read(-1)
 
-    def readinto(self, buf : bytearray) -> int:
+    def readinto(self, buf: bytearray) -> int:
         # Terrible hack...
         size = min(len(buf), self._size - self._pos)
         buf[:size] = self.read(size)
@@ -140,7 +140,7 @@ class _Stream(abc.ABC, io.RawIOBase):
     def writable(self) -> bool:
         return self._handle.writable()
 
-    def write(self, buf : bytes):
+    def write(self, buf: bytes):
         bp, lp, size = 0, self._pos % 8, len(buf)
         st = struct.Struct("<II")
         unpack, pack, write, encipher = st.unpack, st.pack, self._handle.write, self.encipher
@@ -176,16 +176,16 @@ class _Stream(abc.ABC, io.RawIOBase):
         ...
 
     @abc.abstractmethod
-    def encipher(self, buf : Tuple[int, int]) -> Tuple[int, int]:
+    def encipher(self, buf: Tuple[int, int]) -> Tuple[int, int]:
         ...
 
     @abc.abstractmethod
-    def decipher(self, buf : Tuple[int, int]) -> Tuple[int, int]:
+    def decipher(self, buf: Tuple[int, int]) -> Tuple[int, int]:
         ...
 
 
 class _XTEAStream(_Stream):
-    def __init__(self, handle : io.IOBase, key : Union[Iterable[int], int, str, None]):
+    def __init__(self, handle: io.IOBase, key: Union[Iterable[int], int, str, None]):
         if key is None:
             key = (0x6c0a5452, 0x03827d0f, 0x3a170b92, 0x16db7fc2)
         super().__init__(handle, key)
@@ -194,7 +194,7 @@ class _XTEAStream(_Stream):
     def magic_string(self) -> bytes:
         return b"whatdoyousee"
 
-    def encipher(self, buf : Tuple[int, int]) -> Tuple[int, int]:
+    def encipher(self, buf: Tuple[int, int]) -> Tuple[int, int]:
         v0, v1 = buf
         delta, mask = 0x9e3779b9, 0xffffffff
         key = 0
@@ -205,7 +205,7 @@ class _XTEAStream(_Stream):
             v1 = (v1 + (((v0 << 4 ^ v0 >> 5) + v0) ^ (key + ekey[key >> 11 & 3]))) & mask
         return v0, v1
 
-    def decipher(self, buf : Tuple[int, int]) -> Tuple[int, int]:
+    def decipher(self, buf: Tuple[int, int]) -> Tuple[int, int]:
         v0, v1 = buf
         delta = 0x9e3779b9
         key = (delta * 32) & 0xffffffff
@@ -218,7 +218,7 @@ class _XTEAStream(_Stream):
 
 
 class _BTEAStream(_Stream):
-    def __init__(self, handle : io.IOBase, key : Union[Iterable[int], int, str, None]):
+    def __init__(self, handle: io.IOBase, key: Union[Iterable[int], int, str, None]):
         if key is None:
             raise RuntimeError("BTEA Streams require an encryption key.")
         super().__init__(handle, key)
@@ -227,7 +227,7 @@ class _BTEAStream(_Stream):
     def magic_string(self) -> bytes:
         return b"notthedroids"
 
-    def encipher(self, buf : Tuple[int, int]) -> Tuple[int, int]:
+    def encipher(self, buf: Tuple[int, int]) -> Tuple[int, int]:
         v = list(buf)
         y, z = buf[0], buf[1]
         delta = 0x9e3779b9
@@ -255,7 +255,7 @@ class _BTEAStream(_Stream):
 
         return tuple(v)
 
-    def decipher(self, buf : Tuple[int, int]) -> Tuple[int, int]:
+    def decipher(self, buf: Tuple[int, int]) -> Tuple[int, int]:
         v = list(buf)
         y, z = buf[0], buf[1]
         delta = 0x9e3779b9
@@ -304,10 +304,10 @@ def _wrap_c_crypto(stream: _Stream):
             stream.decipher = functools.partial(_urumanifest.btea_decipher, stream._key)
 
 @contextlib.contextmanager
-def stream(filename : Union[str, bytes, PathLike],
-           mode : Mode, *,
-           key : Union[Iterable[int], int, str, None] = None,
-           enc : Encryption = Encryption.Unspecified,
+def stream(filename: Union[str, bytes, PathLike],
+           mode: Mode, *,
+           key: Union[Iterable[int], int, str, None] = None,
+           enc: Encryption = Encryption.Unspecified,
            **kwargs) -> io.BufferedIOBase:
 
     assert enc in Encryption, "Invalid encryption type"
@@ -351,7 +351,7 @@ def stream(filename : Union[str, bytes, PathLike],
             finally:
                 stream.close()
 
-def determine(filename : Union[str, bytes, PathLike]) -> Encryption:
+def determine(filename: Union[str, bytes, PathLike]) -> Encryption:
     with open(filename, "rb") as fo:
         try:
             magic = fo.read(12)
