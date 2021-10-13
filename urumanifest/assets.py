@@ -13,7 +13,7 @@
 #    You should have received a copy of the GNU General Public License
 #    along with UruManifest.  If not, see <http://www.gnu.org/licenses/>.
 
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 from dataclasses import dataclass, field
 import itertools
 import json
@@ -21,7 +21,7 @@ import logging
 from pathlib import Path, PureWindowsPath
 import subprocess
 import sys
-from typing import Any, Dict, Sequence, Union
+from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple
 
 from constants import *
 import manifest
@@ -34,11 +34,26 @@ class Asset:
     categories : Sequence[str] = field(default_factory=set)
 
 
+@dataclass(frozen=True)
+class AssetEntry:
+    file_hash: str
+    download_hash: str
+    file_size: int
+    download_size: int
+
+
+@dataclass
+class AssetDatabase:
+    assets: Dict[Path, AssetEntry]
+    manifests: Dict[str, Sequence[manifest.ManifestEntry]]
+    lists: Dict[Tuple[str, str], Sequence[manifest.ListEntry]]
+
+
 class AssetError(Exception):
     pass
 
 
-def load_asset_database(mfs_path, list_path, db_type):
+def load_asset_database(mfs_path: Path, list_path: Path, db_type: str) -> AssetDatabase:
     logging.info("Reading asset database...")
 
     db_cls = manifest.ManifestDB.get(db_type)
@@ -48,12 +63,11 @@ def load_asset_database(mfs_path, list_path, db_type):
 
     # Merge assets into case insensitive dict and verify hashes. Use a custom type so we don't
     # compare the file flags, which can legally differ (eg sound decompression)
-    asset = namedtuple("AssetEntry", ("file_hash", "download_hash", "file_size", "download_size"))
     assets, conflicts = {}, 0
     for mfs_name, mfs_entries in manifests.items():
         for mfs_entry in mfs_entries:
-            mfs_asset = asset(mfs_entry.file_hash, mfs_entry.download_hash,
-                              mfs_entry.file_size, mfs_entry.download_size)
+            mfs_asset = AssetEntry(mfs_entry.file_hash, mfs_entry.download_hash,
+                                   mfs_entry.file_size, mfs_entry.download_size)
             if assets.setdefault(mfs_entry.file_name, mfs_asset) != mfs_asset:
                 logging.warn(f"CONFLICT: '{mfs_entry.file_name}'")
                 conflicts += conflicts
@@ -62,15 +76,14 @@ def load_asset_database(mfs_path, list_path, db_type):
         logging.warn(f"Discarded {conflicts} conflicting asset entries!")
     logging.trace(f"Loaded {len(assets)} asset entries from {len(manifests)} manifests, with {len(lists)} legacy auth-lists.")
 
-    db = namedtuple("AssetDb", ("assets", "manifests", "lists"))
-    return db(assets, manifests, lists)
+    return AssetDatabase(assets, manifests, lists)
 
-def load_gather_assets(*paths):
+def load_gather_assets(*paths: Path) -> Dict[Path, Asset]:
     logging.info(f"Gathering assets...")
 
     gathers = defaultdict(Asset)
 
-    def append_asset(gather_path, asset_path, client_path, category):
+    def append_asset(gather_path: Path, asset_path: Path, client_path: Path, category: str) -> int:
         # HACK: no json files may be an asset due to their being control files...
         if client_path.suffix.lower() == ".json":
             return 0
@@ -89,7 +102,8 @@ def load_gather_assets(*paths):
             logging.error(f"Asset not available: {asset_path}")
             return 0
 
-    def handle_control_assets(gather_path, source_path, client_directory, category, gather_assets):
+    def handle_control_assets(gather_path: Path, source_path: Path, client_directory: str,
+                              category: str, gather_assets: Dict[str, str]) -> int:
         num_assets = 0
         if "*" in gather_assets:
             gather_assets.remove("*")
@@ -112,14 +126,14 @@ def load_gather_assets(*paths):
             num_assets += append_asset(gather_path, asset_path, client_path, category)
         return num_assets
 
-    def handle_control_folder(gather_path, source_path, subdir_name, subcontrol_name):
+    def handle_control_folder(gather_path: Path, source_path: Path, subdir_name: str, subcontrol_name: str) -> int:
         if any((j in subcontrol_name for j in naughty_path_sequences)):
             logging.error(f"SECURITY: ATTEMPT TO ESCAPE CWD BY: {source_path}")
             return 0
         subcontrol_path = source_path.joinpath(subdir_name, subcontrol_name)
         return handle_gather_package(gather_path, subcontrol_path)
 
-    def handle_gather_package(gather_path, control_path=None):
+    def handle_gather_package(gather_path: Path, control_path: Optional[Path] = None) -> int:
         if control_path is None:
             source_path = gather_path
 
@@ -169,7 +183,7 @@ def load_gather_assets(*paths):
     logging.debug(f"Loaded {len(gathers)} assets from gathers.")
     return gathers
 
-def load_prebuilt_assets(data_path, scripts_path, py_exe):
+def load_prebuilt_assets(data_path: Path, scripts_path: Path, py_exe: Path) -> Dict[Path, Asset]:
     logging.info("Loading prebuilt assets...")
 
     prebuilts = {}
@@ -181,7 +195,9 @@ def load_prebuilt_assets(data_path, scripts_path, py_exe):
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return Path(result.stdout.decode(sys.getdefaultencoding()))
 
-    def handle_prebuilts(category, base_path, source_path=None, prefix_path=None, follow_dirs=True, skip_dirs=set()):
+    def handle_prebuilts(category: str, base_path: Path, source_path: Optional[Path] = None,
+                         prefix_path: Optional[Path] = None, follow_dirs: bool = True,
+                         skip_dirs: Set[str] = set()):
         if source_path is None:
             source_path = base_path
 
@@ -230,7 +246,7 @@ def load_prebuilt_assets(data_path, scripts_path, py_exe):
     logging.debug(f"Loaded {len(prebuilts)} prebuilt assets.")
     return prebuilts
 
-def merge_asset_dicts(prebuilts, gathers):
+def merge_asset_dicts(prebuilts: Dict[Path, Asset], gathers: Dict[Path, Asset]) -> Dict[Path, Asset]:
     logging.info("Merging staged assets...")
     assets = {}
     assets.update(prebuilts)
@@ -238,8 +254,11 @@ def merge_asset_dicts(prebuilts, gathers):
     logging.debug(f"Total known assets: {len(assets)}")
     return assets
 
-def nuke_dead_manifests(cached_manifests, cached_lists, staged_manifests, staged_lists,
-                        mfs_path, list_path, db_type):
+def nuke_dead_manifests(cached_manifests: Dict[Path, manifest.ManifestEntry],
+                        cached_lists: Dict[Tuple[str, str], Sequence[manifest.ListEntry]],
+                        staged_manifests: Dict[str, Set[Path]],
+                        staged_lists: Dict[Tuple[str, str], Set[Path]],
+                        mfs_path: Path, list_path: Path, db_type: str) -> None:
     logging.info("Nuking defunct database files...")
 
     dead_mfs = frozenset(cached_manifests.keys()) - frozenset(staged_manifests.keys())
@@ -251,18 +270,22 @@ def nuke_dead_manifests(cached_manifests, cached_lists, staged_manifests, staged
     if dead_lists:
         db_cls.delete_lists(list_path, *dead_lists)
 
-def save_asset_database(cached_manifests, cached_lists, staged_assets, staged_manifests, staged_lists,
-                        mfs_path, list_path, db_type, droid_key):
+def save_asset_database(cached_manifests: Dict[str, Sequence[manifest.ManifestEntry]],
+                        cached_lists: Dict[Tuple[str, str], Sequence[manifest.ListEntry]],
+                        staged_assets: Dict[Path, manifest.ManifestEntry],
+                        staged_manifests: Dict[str, Set[Path]],
+                        staged_lists: Dict[Tuple[str, str], Set[Path]],
+                        mfs_path: Path, list_path: Path, db_type: str, droid_key):
     logging.info("Saving asset database...")
 
-    def dump_set(set_type, the_set):
+    def dump_set(set_type: str, the_set: Set[str]) -> None:
         if the_set:
             logging.debug(f"--- BEGIN {set_type} ASSETS ---")
             for i in the_set:
                 logging.debug(i)
             logging.debug(f"--- END {set_type} ASSETS ---")
 
-    def iter_manifest(mfs_name):
+    def iter_manifest(mfs_name: str):
         for client_path in staged_manifests[mfs_name]:
             yield staged_assets[client_path]
 
@@ -273,14 +296,14 @@ def save_asset_database(cached_manifests, cached_lists, staged_assets, staged_ma
             for client_path in staged_manifests.get(copy_mfs_name, []):
                 yield staged_assets[client_path]
 
-    def iter_secure_list(key):
+    def iter_secure_list(key: Tuple[str, str]):
         for client_path in staged_lists[key]:
             staged_asset = staged_assets[client_path]
             yield manifest.ListEntry(staged_asset.file_name, staged_asset.file_size)
 
-    def is_manifest_dirty(name : str,
-                          cached_manifest : Dict[Path, Any], # really an "asset" from above
-                          staged_manifest : Sequence[manifest.ManifestEntry]) -> bool:
+    def is_manifest_dirty(name: str,
+                          cached_manifest: Sequence[manifest.ManifestEntry],
+                          staged_manifest: Sequence[manifest.ManifestEntry]) -> bool:
         assert cached_manifest or staged_manifest, "Got a pair of deleted manifests?"
 
         cached_contents = frozenset(i.file_name for i in cached_manifest)
@@ -301,7 +324,7 @@ def save_asset_database(cached_manifests, cached_lists, staged_assets, staged_ma
     db_cls = manifest.ManifestDB.get(db_type)
     for i in staged_manifests.keys():
         staged_manifest = set(iter_manifest(i))
-        if is_manifest_dirty(i, cached_manifests.get(i, {}), staged_manifest):
+        if is_manifest_dirty(i, cached_manifests.get(i, []), staged_manifest):
             db_cls.write_manifest(mfs_path, i, staged_manifest)
 
     # Note... lists are always dirty because they do not contain file hashes.

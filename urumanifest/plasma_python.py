@@ -24,14 +24,16 @@ except ImportError:
     import pickle
 import subprocess
 from threading import Lock
+from typing import Dict, Optional, Sequence, Tuple
 
 from assets import Asset
 from constants import *
 import encryption
+import manifest
 import plasmoul
 import utils
 
-def _build_module_name(script_client_path, source_assets):
+def _build_module_name(script_client_path: Path, source_assets: Dict[Path, Asset]) -> str:
     # Every directory containing an __init__.py file is a module. So, we need to scan backwards
     # to see what this script's module name is. Example: the KI's PFM `xKI` module will import
     # the `ki` module (ki/__init__.py) which has submodules `ki.xKIChat`, etc.
@@ -71,7 +73,8 @@ def _compyle_file(py_exe, py_tools_path, py_file_path, py_glue_path, module_name
         return pickle.loads(stdout, encoding="bytes")
     return {}
 
-def _compyle_all(source_assets, staged_assets, py_exe=None, ncpus=None):
+def _compyle_all(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, manifest.ManifestEntry],
+                 py_exe: Optional[Path] = None, ncpus: Optional[int] = None):
     logging.info("Compyling Python...")
 
     def iter_python_sources():
@@ -79,7 +82,8 @@ def _compyle_all(source_assets, staged_assets, py_exe=None, ncpus=None):
             if "python" in source_asset.categories and client_path.suffix.lower() == ".py":
                 yield client_path, source_asset
 
-    def on_compyle(client_path, source_path, module_name, was_pfm, future):
+    def on_compyle(client_path: Path, source_path: Path, module_name: str, was_pfm: bool,
+                   future: concurrent.futures.Future) -> None:
         with lock:
             logging.debug(f"== Compyle '{client_path}' ==")
             result = future.result()
@@ -162,7 +166,8 @@ def _compyle_all(source_assets, staged_assets, py_exe=None, ncpus=None):
     logging.debug(f"Compyled {len(module_code)} python files.")
     return module_code
 
-def _package(source_assets, staged_assets, module_code, output_path, droid_key):
+def _package(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, manifest.ManifestEntry],
+             module_code: Dict[str, bytes], output_path: Path, droid_key) -> None:
     # Python.pak format:
     # uint32_t numFiles
     #     - safeStr filename
@@ -217,7 +222,9 @@ def _package(source_assets, staged_assets, module_code, output_path, droid_key):
     # Prevent a spurious warning about naughty encryption
     staged_asset.flags |= ManifestFlags.dont_encrypt
 
-def process(source_assets, staged_assets, output_path, droid_key, py_exe=None, py_version=(2,7)):
+def process(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, manifest.ManifestEntry],
+            output_path: Path, droid_key, py_exe: Optional[Path] = None,
+            py_version: Tuple[int, int] = (2,7)) -> None:
     logging.info("Processing client python...")
 
     def iter_python_paks():
@@ -243,7 +250,9 @@ def process(source_assets, staged_assets, output_path, droid_key, py_exe=None, p
     if module_code:
         _package(source_assets, staged_assets, module_code, output_path, droid_key)
 
-def reuse(cached_lists, source_assets, staged_assets, list_path):
+def reuse(cached_lists: Dict[Tuple[str, str], Sequence[manifest.ListEntry]],
+          source_assets: Dict[Path, Asset], staged_assets: Dict[Path, manifest.ManifestEntry],
+          list_path: Path) -> None:
     logging.info("Recycling client Python...")
 
     def iter_python_paks():

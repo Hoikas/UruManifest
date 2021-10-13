@@ -131,7 +131,7 @@ _header = """
 
 """
 
-def dump_default_config(config_path):
+def dump_default_config(config_path: Path):
     with config_path.open("w") as fp:
         fp.write(_header.lstrip())
         for section, values in _defaults.items():
@@ -142,7 +142,7 @@ def dump_default_config(config_path):
                         fp.write(f"; {comment_line}\n")
                 fp.write(f"{option_name} = {option_value}\n\n")
 
-def read_config(config_path):
+def read_config(config_path: Path):
     parser = configparser.ConfigParser(converters=_converters)
     parser.read_dict(_defaults)
     if config_path.is_file():

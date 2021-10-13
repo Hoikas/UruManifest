@@ -20,16 +20,19 @@ import io
 import itertools
 import logging
 from pathlib import Path
+from typing import Dict, Iterable, Iterator, Optional, Set, Tuple
 import subprocess
 
-from assets import AssetError
+from assets import Asset, AssetError
 from constants import *
 import encryption
 import manifest
 import plasma_sdl
 import plasmoul
 
-def find_age_dependencies(source_assets, staged_assets, ncpus=None):
+def find_age_dependencies(source_assets: Dict[Path, Asset],
+                          staged_assets: Dict[Path, manifest.ManifestEntry],
+                          ncpus: Optional[int] = None) -> Dict[str, Set[Path]]:
     logging.info("Finding age dependencies...")
     manifests = defaultdict(set)
 
@@ -37,7 +40,7 @@ def find_age_dependencies(source_assets, staged_assets, ncpus=None):
         for i in age_info.all_pages:
             yield Path("dat", f"{age_info.name}_District_{i}.prp")
 
-    def track_dependency(age_name, client_path, flags=0):
+    def track_dependency(age_name: str, client_path: Path, flags: ManifestFlags = 0):
         if client_path not in source_assets:
             logging.error(f"Dependency file '{client_path}' missing! Used by '{age_name}'.")
         else:
@@ -48,7 +51,7 @@ def find_age_dependencies(source_assets, staged_assets, ncpus=None):
             if not flags & ManifestFlags.script:
                 manifests[age_name].add(client_path)
 
-    def handle_page_externals(age_name, future):
+    def handle_page_externals(age_name: str, future: concurrent.futures.Future) -> None:
         for i in future.result():
             track_dependency(age_name, *i)
 
@@ -84,7 +87,7 @@ def find_age_dependencies(source_assets, staged_assets, ncpus=None):
 
     return manifests
 
-def _find_page_externals(client_path, source_path):
+def _find_page_externals(client_path: Path, source_path: Path) -> Iterable[Tuple[Path, ManifestFlags]]:
     # FIXME: This should probably also consider movies on a per-Age basis. However, implementing
     # a reader for plLayerAnimation is nontrivial. Further, movies are currently listed in the
     # client manifest. So, we'll omit them for now.
@@ -110,7 +113,8 @@ def _find_page_externals(client_path, source_path):
             result.append((Path("dat", f"{page_info.age}.csv"), 0))
     return result
 
-def find_client_dependencies(source_assets, staged_assets):
+def find_client_dependencies(source_assets: Dict[Path, Asset],
+                             staged_assets: Dict[Path, manifest.ManifestEntry]) -> Dict[str, Set[Path]]:
     logging.info("Finding client dependencies...")
     manifests = defaultdict(set)
 
@@ -137,12 +141,12 @@ def find_client_dependencies(source_assets, staged_assets):
             if client_path.suffix.lower() in {".avi", ".bik", ".webm"}:
                 yield client_path
 
-    def track_dependency(client_path, flags=0):
+    def track_dependency(client_path: Path, flags=0):
         entry = staged_assets[client_path]
         entry.file_name = client_path
         entry.flags |= flags
 
-    def track_client_dependency(client_path):
+    def track_client_dependency(client_path: Path):
         track_dependency(client_path)
         for manifest_names in itertools.chain(gather_manifests.values()):
             for i in (manifest_names.full, manifest_names.thin):
@@ -150,7 +154,7 @@ def find_client_dependencies(source_assets, staged_assets):
                 if mfs:
                     mfs.add(client_path)
 
-    def track_manifest_dependency(client_path, category, manifest_names):
+    def track_manifest_dependency(client_path: Path, category: str, manifest_names):
         flags = ManifestFlags.installer if category in gather_installers else 0
         track_dependency(client_path, flags)
         for name in manifest_names:
@@ -167,7 +171,7 @@ def find_client_dependencies(source_assets, staged_assets):
 
     return manifests
 
-def find_script_dependencies(source_assets, staged_assets):
+def find_script_dependencies(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, manifest.ManifestEntry]) -> None:
     logging.info("Finding script dependencies...")
 
     def iter_pfms():
@@ -175,7 +179,7 @@ def find_script_dependencies(source_assets, staged_assets):
             if asset.flags & ManifestFlags.python_file_mod:
                 yield client_path, asset
 
-    def track_dependency(client_path, flags=0):
+    def track_dependency(client_path: Path, flags: ManifestFlags = 0):
         logging.trace(client_path)
         staged_assets[client_path].file_name = client_path
         staged_assets[client_path].flags |= ManifestFlags.script | flags
@@ -212,7 +216,7 @@ def find_script_dependencies(source_assets, staged_assets):
     for i in py_client_paths:
         track_dependency(i, ManifestFlags.consumable)
 
-def _find_script_sdl_dependencies(sdl_mgrs, descriptor_name, optional=False):
+def _find_script_sdl_dependencies(sdl_mgrs, descriptor_name: str, optional=False):
     def find_sdls(sdl_mgrs, descriptor_name, embedded_sdr=False, optional=False):
         dependencies = set()
         descriptors = set()
@@ -241,7 +245,7 @@ def _find_script_sdl_dependencies(sdl_mgrs, descriptor_name, optional=False):
         return dependencies, descriptors
     return find_sdls(sdl_mgrs, descriptor_name, optional=optional)[0]
 
-def _load_sdl_descriptors(assets):
+def _load_sdl_descriptors(assets: Dict[Path, Asset]) -> Dict[Path, plasma_sdl.Manager]:
     sdl_mgrs = {}
     sdl_files = ((client_path, asset) for client_path, asset in assets.items() if client_path.suffix.lower() == ".sdl")
     for client_path, asset in sdl_files:

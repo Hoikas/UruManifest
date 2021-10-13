@@ -15,6 +15,7 @@
 
 import logging
 from pathlib import Path, PureWindowsPath
+from typing import Dict, Iterator, Sequence, Tuple
 
 import manifest
 
@@ -36,13 +37,13 @@ class Dirtsand(manifest.ManifestDB):
                 out_path.unlink()
 
     @classmethod
-    def load_db(cls, mfs_path, list_path): 
+    def load_db(cls, mfs_path: Path, list_path: Path):
         manifests = { i.stem: list(cls.read_manifest(i)) for i in mfs_path.glob("*.mfs") }
         lists = cls._read_lists(list_path)
         return manifests, lists
 
     @classmethod
-    def _read_lists(cls, path):
+    def _read_lists(cls, path: Path) -> Dict[Tuple[str, str], Sequence[manifest.ListEntry]]:
         value = {}
         for i in path.glob("*.list"):
             try:
@@ -54,7 +55,7 @@ class Dirtsand(manifest.ManifestDB):
         return value
 
     @classmethod
-    def read_list(cls, path):
+    def read_list(cls, path: Path) -> Iterator[manifest.ListEntry]:
         logging.debug(f"Reading secure list: {path}")
         with path.open(mode="r") as f:
             for i, line in enumerate(f):
@@ -77,7 +78,7 @@ class Dirtsand(manifest.ManifestDB):
                     yield entry
 
     @classmethod
-    def write_list(cls, path, name, entries):
+    def write_list(cls, path: Path, name: str, entries: Sequence[manifest.ListEntry]):
         out_path = path.joinpath(name).with_suffix(".list")
         logging.debug(f"Writing secure list: {out_path}")
         with out_path.open("w") as f:
@@ -88,12 +89,12 @@ class Dirtsand(manifest.ManifestDB):
                 f.write(f"{ln}\n")
 
     @classmethod
-    def write_lists(cls, path, droid_key, contents):
+    def write_lists(cls, path: Path, droid_key, contents: Dict[Tuple[str, str], Sequence[manifest.ListEntry]]):
         for key, entries in contents.items():
             cls.write_list(path, "{0}_{1}.list".format(*key), entries)
 
     @classmethod
-    def read_manifest(cls, path):
+    def read_manifest(cls, path: Path):
         logging.debug(f"Reading manifest: {path}")
         with path.open(mode="r") as f:
             for i, line in enumerate(f):
@@ -121,7 +122,7 @@ class Dirtsand(manifest.ManifestDB):
                     yield entry
 
     @classmethod
-    def write_manifest(cls, path, name, entries):
+    def write_manifest(cls, path: Path, name: str, entries: Sequence[manifest.ManifestEntry]):
         out_path = path.joinpath(name).with_suffix(".mfs")
         logging.debug(f"Writing manifest: {out_path}")
         with out_path.open("w") as f:
