@@ -21,7 +21,7 @@ import logging
 from pathlib import Path, PureWindowsPath
 import subprocess
 import sys
-from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple, Union
 
 from constants import *
 import manifest
@@ -53,6 +53,43 @@ class AssetError(Exception):
     pass
 
 
+def build_server_path(client_path: Path, server_directory: Optional[str] = None,
+                      category: Optional[str] = None) -> Path:
+
+    # If no category or server directory was manually specified, we can possibly figure it out
+    # based on the asset's client path. The root directory is where life gets problematic.
+    if server_directory is None and category is None:
+        if not client_path.parent.name:
+            raise ValueError("server_directory or category must be specified for files in the client root")
+        category, server_directory = next(
+            ((category, directories.server_directory) for category, directories in gather_lut.items() if directories.client_directory.lower() == client_path.parent.name.lower()),
+            (None, None)
+        )
+        assert category and server_directory, f"build_server_path: {client_path} {category} {server_directory}"
+
+    if not server_directory:
+        server_directory = gather_lut[category].server_directory
+    server_subdirectory = server_subdirectory_lut.get(client_path.suffix.lower(), "")
+    return Path(server_directory, server_subdirectory, client_path.name)
+
+def lookup_asset(source_assets: Dict[Path, Asset], client_path: Path,
+                 server_directory: Optional[str] = None,
+                 category: Optional[str] = None) -> Union[Tuple[Path, Asset], Tuple[None, None]]:
+    # Simple by path lookup first
+    if server_directory or category:
+        server_path = build_server_path(client_path, server_directory, category)
+        checked_asset = source_assets.get(server_path)
+        if checked_asset is not None and checked_asset.client_path == client_path:
+            return server_path, checked_asset
+
+    # Slow bruteforce search
+    lookup = ((sp, asset) for sp, asset in source_assets.items() if asset.client_path == client_path)
+    server_path, asset = next(lookup, (None, None))
+    warn_count = sum((1 for _ in lookup))
+    if warn_count:
+        logging.warning(f"Asset lookup for {client_path} resulted in {warn_count + 1} results, expected 1. Tighten up this search, ok?")
+    return server_path, asset
+
 def load_asset_database(mfs_path: Path, list_path: Path, db_type: str) -> AssetDatabase:
     logging.info("Reading asset database...")
 
@@ -68,10 +105,18 @@ def load_asset_database(mfs_path: Path, list_path: Path, db_type: str) -> AssetD
         for mfs_entry in mfs_entries:
             mfs_asset = AssetEntry(mfs_entry.file_hash, mfs_entry.download_hash,
                                    mfs_entry.file_size, mfs_entry.download_size)
-            if assets.setdefault(mfs_entry.file_name, mfs_asset) != mfs_asset:
-                logging.warn(f"CONFLICT: '{mfs_entry.file_name}'")
+
+            # HAX: lop off the spurious compression extension.
+            # TODO: if we ever add support for something other than .gz, we will need to revisit this.
+            if len(mfs_entry.download_name.suffixes) > 1 and mfs_entry.download_name.suffix.lower() == ".gz":
+                server_path = mfs_entry.download_name.with_suffix("")
+            else:
+                server_path = mfs_entry.download_name
+
+            if assets.setdefault(server_path, mfs_asset) != mfs_asset:
+                logging.warn(f"CONFLICT: '{server_path}'")
                 conflicts += conflicts
-                assets[mfs_entry.file_name] = None
+                assets[mfs_entry.download_name] = None
     if conflicts:
         logging.warn(f"Discarded {conflicts} conflicting asset entries!")
     logging.trace(f"Loaded {len(assets)} asset entries from {len(manifests)} manifests, with {len(lists)} legacy auth-lists.")
@@ -83,15 +128,15 @@ def load_gather_assets(*paths: Path) -> Dict[Path, Asset]:
 
     gathers = defaultdict(Asset)
 
-    def append_asset(gather_path: Path, asset_path: Path, client_path: Path, category: str) -> int:
+    def append_asset(gather_path: Path, asset_path: Path, client_path: Path, server_path: Path, category: str) -> int:
         # HACK: no json files may be an asset due to their being control files...
         if client_path.suffix.lower() == ".json":
             return 0
 
-        if client_path in gathers and gathers[client_path].gather_path != gather_path:
-            raise AssetError(f"Gather asset conflict '{client_path}'")
+        if server_path in gathers and gathers[server_path].client_path != client_path:
+            raise AssetError(f"Gather asset conflict '{server_path}' (providing client asset: '{client_path}')")
         if asset_path.exists():
-            gather = gathers[client_path]
+            gather = gathers[server_path]
             gather.gather_path = gather_path
             gather.source_path = asset_path
             gather.client_path = client_path
@@ -103,7 +148,7 @@ def load_gather_assets(*paths: Path) -> Dict[Path, Asset]:
             return 0
 
     def handle_control_assets(gather_path: Path, source_path: Path, client_directory: str,
-                              category: str, gather_assets: Dict[str, str]) -> int:
+                              server_directory: str, category: str, gather_assets: Dict[str, str]) -> int:
         num_assets = 0
         if "*" in gather_assets:
             gather_assets.remove("*")
@@ -113,7 +158,8 @@ def load_gather_assets(*paths: Path) -> Dict[Path, Asset]:
                 if not i.is_file():
                     continue
                 client_path = Path(client_directory, i.relative_to(source_path))
-                num_assets += append_asset(gather_path, i, client_path, category)
+                server_path = build_server_path(client_path, server_directory)
+                num_assets += append_asset(gather_path, i, client_path, server_path, category)
 
         for i in (PureWindowsPath(i) for i in gather_assets):
             if any((j in i.name for j in naughty_path_sequences)):
@@ -123,7 +169,8 @@ def load_gather_assets(*paths: Path) -> Dict[Path, Asset]:
             # NOTE: directory structure of the gather package will be pitched
             asset_path = source_path.joinpath(i)
             client_path = Path(client_directory, i.name)
-            num_assets += append_asset(gather_path, asset_path, client_path, category)
+            server_path = build_server_path(client_path, server_directory)
+            num_assets += append_asset(gather_path, asset_path, client_path, server_path, category)
         return num_assets
 
     def handle_control_folder(gather_path: Path, source_path: Path, subdir_name: str, subcontrol_name: str) -> int:
@@ -159,7 +206,7 @@ def load_gather_assets(*paths: Path) -> Dict[Path, Asset]:
 
         num_assets = 0
         for key, value in gather_control.items():
-            client_directory = gather_lut.get(key.lower())
+            client_directory, server_directory = gather_lut.get(key.lower(), (None, None))
             if client_directory is None:
                 if key.lower() != "folders":
                     logging.warning(f"Invalid section '{key}' in control file '{control_path}'")
@@ -167,10 +214,10 @@ def load_gather_assets(*paths: Path) -> Dict[Path, Asset]:
                 for subdir_name, subcontrol_name in value.items():
                     num_assets += handle_control_folder(gather_path, source_path, subdir_name, subcontrol_name)
             else:
-                num_assets += handle_control_assets(gather_path, source_path, client_directory, key, value)
+                num_assets += handle_control_assets(gather_path, source_path, client_directory, server_directory, key, value)
         return num_assets
 
-    gather_iter = (path.iterdir() for path in paths)
+    gather_iter = (path.iterdir() for path in paths if path.is_dir())
     for i in itertools.chain(*gather_iter):
         if not i.is_dir():
             logging.warning(f"Skipping non-directory gather path '{i.name}'!")
@@ -195,22 +242,21 @@ def load_prebuilt_assets(data_path: Path, scripts_path: Path, py_exe: Path) -> D
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return Path(result.stdout.decode(sys.getdefaultencoding()))
 
-    def handle_prebuilts(category: str, base_path: Path, source_path: Optional[Path] = None,
-                         prefix_path: Optional[Path] = None, follow_dirs: bool = True,
-                         skip_dirs: Set[str] = set()):
+    def handle_prebuilts(category: str, server_directory: str, base_path: Path,
+                         source_path: Optional[Path] = None, prefix_path: Path = Path(),
+                         follow_dirs: bool = True, skip_dirs: Set[str] = set()) -> None:
         if source_path is None:
             source_path = base_path
 
         for i in source_path.iterdir():
             if i.is_file():
-                client_path = i.relative_to(base_path)
-                if prefix_path:
-                    client_path = prefix_path.joinpath(client_path)
-                prebuilts[client_path] = Asset(None, i, client_path, set((category,)))
+                client_path = prefix_path.joinpath(i.relative_to(base_path))
+                server_path = build_server_path(client_path, server_directory, category)
+                prebuilts[server_path] = Asset(None, i, client_path, set((category,)))
             elif i.is_dir() and follow_dirs and i.stem not in skip_dirs:
-                handle_prebuilts(category, base_path, i, prefix_path=prefix_path)
+                handle_prebuilts(category, server_directory, base_path, i, prefix_path=prefix_path)
 
-    for category, client_directory in gather_lut.items():
+    for category, (client_directory, server_directory) in gather_lut.items():
         if not client_directory:
             continue
         data_source_path = data_path.joinpath(client_directory)
@@ -221,12 +267,15 @@ def load_prebuilt_assets(data_path: Path, scripts_path: Path, py_exe: Path) -> D
         # The age files in the scripts directory tend to list "dead" pages that only exist
         # on Cyan's AssMan machine. So, we prefer the compiled data...
         if scripts_source_path.is_dir():
-            handle_prebuilts(category, scripts_path, scripts_source_path)
+            handle_prebuilts(category, server_directory, scripts_path, scripts_source_path)
         if data_source_path.is_dir():
-            handle_prebuilts(category, data_path, data_source_path)
+            handle_prebuilts(category, server_directory, data_path, data_source_path)
 
-    # Have to handle the client root a bit differently due to duplication of the gather sections.
-    handle_prebuilts(None, data_path, follow_dirs=False)
+    # We used to handle the client root directory here. However, per the README:
+    #   "UruManifest is currently unable to automate detection of client executables, libraries,
+    #    and redistributables."
+    # so that action was spurious. Even more so now that we attempt to fetch both x86 and x64
+    # clients from GitHub Actions. So fuggedaboutit.
 
     # Load the python standard library in, if needed.
     if not scripts_path.joinpath("Python", "system").is_dir():
@@ -234,7 +283,7 @@ def load_prebuilt_assets(data_path: Path, scripts_path: Path, py_exe: Path) -> D
         stdlib_path = find_python_dist_packages()
         if stdlib_path.is_dir():
             logging.debug(f"... from {stdlib_path}")
-            handle_prebuilts("python", stdlib_path, prefix_path=Path("Python", "system"),
+            handle_prebuilts("python", "", stdlib_path, prefix_path=Path("Python", "system"),
                              skip_dirs={"__pycache__", "site-packages", "asyncio", "concurrent",
                                         "ctypes", "curses", "dbm", "distutils", "ensurepip", "email",
                                         "html", "http", "idlelib", "lib2to3", "msilib", "multiprocessing",
@@ -286,19 +335,19 @@ def save_asset_database(cached_manifests: Dict[str, Sequence[manifest.ManifestEn
             logging.debug(f"--- END {set_type} ASSETS ---")
 
     def iter_manifest(mfs_name: str):
-        for client_path in staged_manifests[mfs_name]:
-            yield staged_assets[client_path]
+        for server_path in staged_manifests[mfs_name]:
+            yield staged_assets[server_path]
 
         # Some manifests may also want to hijack the contents of another manifest.
         # We do that here because, in some cases (eg ExternalPatcher), order is important.
         # NOTE: no recursive copying. just no. *shudder*
         for copy_mfs_name in manifest_copy_from.get(mfs_name, []):
-            for client_path in staged_manifests.get(copy_mfs_name, []):
-                yield staged_assets[client_path]
+            for server_path in staged_manifests.get(copy_mfs_name, []):
+                yield staged_assets[server_path]
 
     def iter_secure_list(key: Tuple[str, str]):
-        for client_path in staged_lists[key]:
-            staged_asset = staged_assets[client_path]
+        for server_path in staged_lists[key]:
+            staged_asset = staged_assets[server_path]
             yield manifest.ListEntry(staged_asset.file_name, staged_asset.file_size)
 
     def is_manifest_dirty(name: str,

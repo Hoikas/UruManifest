@@ -14,6 +14,7 @@
 #    along with UruManifest.  If not, see <http://www.gnu.org/licenses/>.
 
 from collections import namedtuple
+from typing import NamedTuple
 import enum
 
 from encryption import Encryption
@@ -45,7 +46,12 @@ crypt_types = {
 # All gather sections that list installer prerequisites
 gather_installers = frozenset(("prereq",))
 
-_manifests = namedtuple("GatherManifests", ("thin", "patcher", "full"))
+class _manifests(NamedTuple):
+    thin: str
+    patcher: str
+    full: str
+
+
 gather_manifests = {
     # Windows (x86)
     "external": _manifests("ThinExternal", "ExternalPatcher", "External"),
@@ -56,17 +62,22 @@ gather_manifests = {
     "mac": _manifests(None, None, "macExternal"),
 }
 
-gather_lut = {
-    "data": "dat",
-    "sdl": "SDL",
-    "python": "Python",
-    "sfx": "sfx",
-    "avi": "avi",
+class _directorytuple(NamedTuple):
+    client_directory: str
+    server_directory: str
 
-    "external": "",
-    "internal": "",
-    "mac": "",
-    "prereq": "",
+
+gather_lut = {
+    "data": _directorytuple("dat", "data"),
+    "sdl": _directorytuple("SDL", "scripts"),
+    "python": _directorytuple("Python", "scripts"),
+    "sfx": _directorytuple("sfx", "audio"),
+    "avi": _directorytuple("avi", "video"),
+
+    "external": _directorytuple("", "client/windows_ia32/external"),
+    "internal": _directorytuple("", "client/windows_ia32/internal"),
+    "mac": _directorytuple("", "client/macos_ia32/external"),
+    "prereq": _directorytuple("", "dependencies/windows_ia32"),
 }
 
 # HAX: Copy the contents of the value's manifest to the end of the key's manifest
@@ -112,3 +123,16 @@ class PyToolsResultCodes(enum.IntEnum):
     invalid_command = py2constants.TOOLS_INVALID_COMMAND
     traceback = py2constants.TOOLS_MODULE_TRACEBACK
     file_not_found = py2constants.TOOLS_FILE_NOT_FOUND
+
+
+server_subdirectory_lut = {
+    ".age": "age",
+    ".csv": "csv",
+    ".fni": "fni",
+    ".loc": "localization",
+    ".p2f": "font",
+    ".pak": "python_pak",
+    ".prp": "prp",
+    ".py": "python_code",
+    ".sdl": "sdl",
+}

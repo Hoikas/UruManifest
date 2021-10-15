@@ -23,7 +23,7 @@ import itertools
 import logging
 from pathlib import Path
 import shutil
-from typing import Dict, Optional, Set, Tuple, Union
+from typing import Dict, NamedTuple, Optional, Set, Tuple, Union
 
 from assets import Asset, AssetDatabase, AssetError, AssetEntry
 from constants import *
@@ -32,7 +32,7 @@ import manifest
 
 _BUFFER_SIZE = 10 * 1024 * 1024
 
-def _compress_asset(client_path: Path, source_path: Path, output_path: Path):
+def _compress_asset(source_path: Path, output_path: Path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with source_path.open("rb") as in_stream:
         with gzip.open(output_path, "wb") as gz_stream:
@@ -43,12 +43,12 @@ def _compress_asset(client_path: Path, source_path: Path, output_path: Path):
     return h.hexdigest(), output_path.stat().st_size
 
 def _hash_asset(args: Tuple[Path, Path]) -> Tuple[Path, str, int]:
-    client_path, source_path = args
+    server_path, source_path = args
     # One day, we will not use such a vulnerable hashing algo...
     h = hashlib.md5()
     with source_path.open("rb") as in_stream:
         _io_loop(in_stream, h.update)
-    return client_path, h.hexdigest(), source_path.stat().st_size
+    return server_path, h.hexdigest(), source_path.stat().st_size
 
 def _compare_files(newFile: Path, prevFile: Path, *, key=None) -> bool:
     if not prevFile.exists() or not newFile.exists():
@@ -107,13 +107,9 @@ def compress_dirty_assets(manifests: Dict[str, Set[Path]], cached_assets: Dict[P
     with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
         asset_iter = ((i, staged_assets.get(i), source_assets.get(i), cached_assets.get(i))
                       for i in compressed_assets)
-        for client_path, staged_asset, source_asset, cached_asset in asset_iter:
-            # ensure no files get put into the manifest directory...
-            if not client_path.parent.name:
-                asset_output_path = output_path.joinpath("base", client_path)
-            else:
-                asset_output_path = output_path.joinpath(client_path)
-            asset_output_path = asset_output_path.with_suffix(f"{asset_output_path.suffix}.gz")
+        for server_path, staged_asset, source_asset, cached_asset in asset_iter:
+            assert server_path.parent.name
+            asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.gz")
             staged_asset.download_name = asset_output_path.relative_to(output_path)
 
             # While the old, sucky manifest generator was picky about what it compressed, we're not
@@ -122,7 +118,7 @@ def compress_dirty_assets(manifests: Dict[str, Set[Path]], cached_assets: Dict[P
             staged_asset.flags |= ManifestFlags.file_gzipped
 
             if staged_asset.flags & ManifestFlags.dirty or force:
-                future = executor.submit(_compress_asset, client_path,
+                future = executor.submit(_compress_asset,
                                          source_asset.source_path,
                                          asset_output_path)
                 future.add_done_callback(functools.partial(on_compress, staged_asset))
@@ -138,9 +134,9 @@ def copy_secure_assets(secure_lists: Dict[Tuple[str, str], Set[Path]], source_as
     secure_assets = set(itertools.chain.from_iterable(secure_lists.values()))
 
     def copy_asset(asset_source_path: Path, asset_output_path: Path,
-                   client_path: Path, future: concurrent.futures.Future) -> None:
+                   server_path: Path, future: concurrent.futures.Future) -> None:
         size = asset_source_path.stat().st_size
-        staged_assets[client_path].file_size = size
+        staged_assets[server_path].file_size = size
         if not future.result():
             asset_output_path.parent.mkdir(parents=True, exist_ok=True)
             try:
@@ -149,19 +145,20 @@ def copy_secure_assets(secure_lists: Dict[Tuple[str, str], Set[Path]], source_as
                 # Hmmm...
                 pass
             else:
-                logging.debug(f"Copied {client_path} ({size:n} bytes)")
+                logging.debug(f"Copied {server_path} ({size:n} bytes)")
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
         # Only copy over things that we can verify have changed to better enable staging changesets.
         # Sadly, due to the fact that these are "secure lists" we cannot rely on every server knowing
         # the hash of the asset (ironic, right?) - so we have to hash against whatever the server has
         # lying around. Gulp.
-        for client_path in secure_assets:
-            asset_input_path = input_path.joinpath(client_path)
-            asset_output_path = output_path.joinpath(client_path)
-            asset_source_path = source_assets[client_path].source_path
+        for server_path in secure_assets:
+            source_asset = source_assets[server_path]
+            asset_input_path = input_path.joinpath(server_path)
+            asset_output_path = output_path.joinpath(server_path)
+            asset_source_path = source_asset.source_path
             fut = executor.submit(_compare_files, asset_source_path, asset_input_path, key=droid_key)
-            fut.add_done_callback(functools.partial(copy_asset, asset_source_path, asset_output_path, client_path))
+            fut.add_done_callback(functools.partial(copy_asset, asset_source_path, asset_output_path, server_path))
 
 def copy_server_assets(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, manifest.ManifestEntry],
                        age_path_in: Path, sdl_path_in: Path, age_path_out: Path,
@@ -171,16 +168,15 @@ def copy_server_assets(source_assets: Dict[Path, Asset], staged_assets: Dict[Pat
     # source_path: the definitive copy of this asset that we want to ship (always exists)
     # input_path: the path to the current asset on the server (may or may not exist)
     # output_put: the destination path we will copy `source_path` to - might or might not be the same as `input_path`
-    @dataclass(frozen=True)
-    class ServerAsset:
+    class ServerAsset(NamedTuple):
         source_path: Path
         input_path: Path
         output_path: Path
 
     def discover_server_assets(asset_category: str, asset_suffix: str, input_path: Path, output_path: Path):
-        for client_path, asset in source_assets.items():
-            if asset_category in asset.categories and client_path.suffix.lower() == asset_suffix:
-                yield ServerAsset(asset.source_path, input_path.joinpath(client_path.name), output_path.joinpath(client_path.name))
+        for server_path, asset in source_assets.items():
+            if asset_category in asset.categories and asset.client_path.suffix.lower() == asset_suffix:
+                yield ServerAsset(asset.source_path, input_path.joinpath(server_path.name), output_path.joinpath(server_path.name))
 
     def copy_asset(asset_source_path: Path, asset_output_path: Path, fut: concurrent.futures.Future):
         if not fut.result():
@@ -211,9 +207,9 @@ def find_dirty_assets(cached_assets: Dict[Path, AssetEntry], staged_assets: Dict
     logging.info("Comparing asset hashes...")
 
     def iter_asset_hashes():
-        for client_path, staged_asset in staged_assets.items():
+        for server_path, staged_asset in staged_assets.items():
             if not staged_asset.flags & ManifestFlags.consumable:
-                cached_asset = cached_assets.get(client_path)
+                cached_asset = cached_assets.get(server_path)
                 yield staged_asset, getattr(cached_asset, "file_hash", None), staged_asset.file_hash
 
     for staged_asset, cached_hash, staged_hash in iter_asset_hashes():
@@ -221,12 +217,12 @@ def find_dirty_assets(cached_assets: Dict[Path, AssetEntry], staged_assets: Dict
         if dirty:
             staged_asset.flags |= ManifestFlags.dirty
         logstr = "dirty" if dirty else "clean"
-        logging.trace(f"{staged_asset.file_name}: {logstr}")
+        logging.trace(f"{staged_asset.download_name}: {logstr}")
 
     cached_set = frozenset(cached_assets.keys())
-    staged_set = frozenset((cp for cp, sa in staged_assets.items() if not sa.flags & ManifestFlags.consumable))
+    staged_set = frozenset((sp for sp, sa in staged_assets.items() if not sa.flags & ManifestFlags.consumable))
     all_assets = frozenset(itertools.chain(cached_set, staged_set))
-    dirty_assets = frozenset((cp for cp, sa in staged_assets.items() if sa.flags & ManifestFlags.dirty and not sa.flags & ManifestFlags.consumable))
+    dirty_assets = frozenset((sp for sp, sa in staged_assets.items() if sa.flags & ManifestFlags.dirty and not sa.flags & ManifestFlags.consumable))
     added_assets = staged_set - cached_set
     deleted_assets = cached_set - staged_set
     changed_assets = dirty_assets - added_assets - deleted_assets
@@ -247,22 +243,22 @@ def encrypt_staged_assets(source_assets: Dict[Path, Asset], staged_assets: Dict[
                           working_path: Path, droid_key, ncpus: Optional[int] = None) -> None:
     logging.info("Encrypting assets...")
 
-    def on_asset_encrypt(client_path: Path, fut: concurrent.futures.Future):
-        logging.trace(f"Encrypted: {client_path}")
+    def on_asset_encrypt(server_path: Path, fut: concurrent.futures.Future):
+        logging.trace(f"Encrypted: {server_path}")
         # Propagate any exceptions...
         fut.result()
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
-        for client_path, staged_asset in staged_assets.items():
-            desired_crypt = crypt_types.get(client_path.suffix.lower())
+        for server_path, staged_asset in staged_assets.items():
+            desired_crypt = crypt_types.get(staged_asset.file_name.suffix.lower())
             if desired_crypt is None or staged_asset.flags & ManifestFlags.dont_encrypt:
                 continue
 
-            source_asset = source_assets[client_path]
+            source_asset = source_assets[server_path]
             current_crypt = encryption.determine(source_asset.source_path)
 
             if current_crypt != desired_crypt and current_crypt != encryption.Encryption.BTEA:
-                out_path = working_path.joinpath(client_path)
+                out_path = working_path.joinpath(server_path)
 
                 kwargs = {
                     "enc": desired_crypt,
@@ -270,7 +266,7 @@ def encrypt_staged_assets(source_assets: Dict[Path, Asset], staged_assets: Dict[
                 }
 
                 fut = executor.submit(_encrypt_asset, source_asset.source_path, out_path, **kwargs)
-                fut.add_done_callback(functools.partial(on_asset_encrypt, client_path))
+                fut.add_done_callback(functools.partial(on_asset_encrypt, server_path))
 
                 source_asset.source_path = out_path
                 # I'm not sure why we forced the encrypted files as dirty. The hash stage is after this,
@@ -278,7 +274,7 @@ def encrypt_staged_assets(source_assets: Dict[Path, Asset], staged_assets: Dict[
                 # just not thinking about something. :/
                 #staged_asset.flags |= ManifestFlags.dirty
             elif current_crypt == desired_crypt and desired_crypt == encryption.Encryption.BTEA:
-                logging.warning(f"Asset '{client_path}' is already droid encrypted??? This will prevent trivial key changes.")
+                logging.warning(f"Asset '{source_asset.source_path}' is already droid encrypted??? This will prevent trivial key changes.")
             elif current_crypt != desired_crypt:
                 raise AssetError(f"Asset '{source_asset.source_path}' was pre-encrypted incorrectly. Please decrypt it manually.")
 
@@ -286,10 +282,10 @@ def hash_staged_assets(source_assets: Dict[Path, Asset], staged_assets: Dict[Pat
                        ncpus: Optional[int] = None) -> None:
     logging.info("Hashing all staged assets...")
     with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
-        args = ((cp, source_assets[cp].source_path) for cp, sa in staged_assets.items() if not sa.flags & ManifestFlags.consumable)
-        for client_path, h, sz in executor.map(_hash_asset, args, chunksize=64):
-            logging.trace(f"{client_path}: {h}")
-            staged_asset = staged_assets[client_path]
+        args = ((sp, source_assets[sp].source_path) for sp, sa in staged_assets.items() if not sa.flags & ManifestFlags.consumable)
+        for server_path, h, sz in executor.map(_hash_asset, args, chunksize=64):
+            logging.trace(f"{server_path}: {h}")
+            staged_asset = staged_assets[server_path]
             staged_asset.file_hash = h
             staged_asset.file_size = sz
     logging.debug(f"Hashed {len(staged_assets)} files.")
@@ -299,16 +295,16 @@ def make_secure_downloads(staged_assets: Dict[Path, manifest.ManifestEntry],
     logging.info("Preparing secure preload download...")
 
     def iter_secure_assets():
-        for client_path in staged_assets.keys():
-            if client_path.suffix.lower() in {".pak", ".sdl"}:
-                yield client_path
+        for server_path, asset in staged_assets.items():
+            if asset.file_name.suffix.lower() in {".pak", ".sdl"}:
+                yield server_path, asset
 
     secure_manifests = defaultdict(set)
     if manifest:
-        secure_manifests["SecurePreloader"].update(iter_secure_assets())
+        secure_manifests["SecurePreloader"].update((i[0] for i in iter_secure_assets()))
     secure_lists = defaultdict(set)
-    for client_path in iter_secure_assets():
-        secure_lists[(client_path.parent.name, client_path.suffix.lower()[1:])].add(client_path)
+    for server_path, staged_asset in iter_secure_assets():
+        secure_lists[(staged_asset.file_name.parent.name, staged_asset.file_name.suffix.lower()[1:])].add(server_path)
     return secure_manifests, secure_lists
 
 def merge_manifests(age_manifests: Dict[str, Set[Path]], client_manifests: Dict[str, Set[Path]],
@@ -337,15 +333,15 @@ def nuke_unstaged_assets(cached_db: AssetDatabase, staged_assets: Dict[Path, man
     cached_assets, manifests, lists = cached_db.assets, cached_db.manifests, cached_db.lists
     deleted_assets = frozenset(cached_assets.keys()) - frozenset(staged_assets.keys())
 
-    def unlink_asset(client_path):
-        logging.trace(f"Unlinking asset '{client_path}'")
-        if client_path.suffix.lower() == ".prp":
-            logging.error(f"Unlinking page '{client_path.name}' -- this may cause issues on legacy clients!")
+    def unlink_asset(server_path: Path):
+        logging.trace(f"Unlinking asset '{server_path}'")
+        if server_path.name.lower().endswith(".prp.gz"):
+            logging.error(f"Unlinking page '{server_path}' -- this may cause issues on legacy clients!")
 
         deletions = 0
         for entry in itertools.chain(itertools.chain.from_iterable(manifests.values()),
                                      itertools.chain.from_iterable(lists.values())):
-            if entry.file_name == client_path:
+            if entry.file_name == server_path:
                 deletions += unlink_entry(entry)
         return deletions
 

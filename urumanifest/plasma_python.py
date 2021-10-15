@@ -26,7 +26,7 @@ import subprocess
 from threading import Lock
 from typing import Dict, Optional, Sequence, Tuple
 
-from assets import Asset
+from assets import Asset, build_server_path, lookup_asset
 from constants import *
 import encryption
 import manifest
@@ -78,9 +78,9 @@ def _compyle_all(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, man
     logging.info("Compyling Python...")
 
     def iter_python_sources():
-        for client_path, source_asset in source_assets.items():
-            if "python" in source_asset.categories and client_path.suffix.lower() == ".py":
-                yield client_path, source_asset
+        for server_path, source_asset in source_assets.items():
+            if "python" in source_asset.categories and source_asset.client_path.suffix.lower() == ".py":
+                yield server_path, source_asset
 
     def on_compyle(client_path: Path, source_path: Path, module_name: str, was_pfm: bool,
                    future: concurrent.futures.Future) -> None:
@@ -125,7 +125,7 @@ def _compyle_all(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, man
         return
 
     # H-uru Python.paks can have submodules, so prepare a dict of those.
-    module_lut = { i: _build_module_name(i, source_assets) for i, _ in iter_python_sources() }
+    module_lut = { source_asset.client_path: _build_module_name(source_asset.client_path, source_assets) for _, source_asset in iter_python_sources() }
     c = Counter(module_lut.values())
     module_code = {}
 
@@ -133,9 +133,8 @@ def _compyle_all(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, man
     # to facillitate use in the engine. Someday, the glue will be rewritten in C++, so it's not a fatal
     # error if the glue code is missing.
     glue_client_path = Path("Python", "plasma", "glue.py")
-    try:
-        glue_asset = source_assets[glue_client_path]
-    except LookupError:
+    glue_server_path, glue_asset = lookup_asset(source_assets, glue_client_path)
+    if glue_asset is None:
         logging.error("Plasma Python glue not available... This might be bad news...")
         glue_path = None
     else:
@@ -149,7 +148,8 @@ def _compyle_all(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, man
     with concurrent.futures.ThreadPoolExecutor(max_workers=ncpus) as executor:
         # Logfile sanity
         lock = Lock()
-        for client_path, source_asset in iter_python_sources():
+        for server_path, source_asset in iter_python_sources():
+            client_path = source_asset.client_path
             module_name = module_lut.get(client_path)
             if not module_name:
                 logging.error(f"Skipping '{client_path}' due to empty module name!")
@@ -157,7 +157,7 @@ def _compyle_all(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, man
             if c.get(module_name) != 1:
                 logging.error(f"Skipping '{client_path}' due to conflicting module name '{module_name}'!")
                 continue
-            is_pfm = bool(staged_assets[client_path].flags & ManifestFlags.python_file_mod)
+            is_pfm = bool(staged_assets[server_path].flags & ManifestFlags.python_file_mod)
 
             future = executor.submit(_compyle_file, py_exe, py_tools_path, source_asset.source_path,
                                      glue_path, module_name, is_pfm)
@@ -182,6 +182,7 @@ def _package(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, manifes
         return
 
     pak_client_path = Path("Python", "Python.pak")
+    pak_server_path = build_server_path(pak_client_path)
     pak_source_path = output_path.joinpath(pak_client_path)
     pak_source_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -216,8 +217,8 @@ def _package(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, manifes
             stream.writeu32(len(compyled_code))
             stream.write(compyled_code)
 
-    source_assets[pak_client_path] = Asset(None, pak_source_path, pak_client_path, set(("python",)))
-    staged_asset = staged_assets[pak_client_path]
+    source_assets[pak_server_path] = Asset(None, pak_source_path, pak_client_path, set(("python",)))
+    staged_asset = staged_assets[pak_server_path]
     staged_asset.file_name = pak_client_path
     # Prevent a spurious warning about naughty encryption
     staged_asset.flags |= ManifestFlags.dont_encrypt
@@ -228,16 +229,16 @@ def process(source_assets: Dict[Path, Asset], staged_assets: Dict[Path, manifest
     logging.info("Processing client python...")
 
     def iter_python_paks():
-        for client_path, source_asset in source_assets.items():
-            if "python" in source_asset.categories and client_path.suffix.lower() == ".pak":
-                yield client_path, source_asset
+        for server_path, source_asset in source_assets.items():
+            if "python" in source_asset.categories and source_asset.client_path.suffix.lower() == ".pak":
+                yield server_path, source_asset
 
     # Check for any Python paks -- if they exist, bail.
     if any(iter_python_paks()):
         logging.warning("Using prebuilt Python packages -- this is not recommended!")
-        for client_path, source_asset in iter_python_paks():
-            logging.trace(f"Prebuilt Python: '{client_path.name}'")
-            staged_assets[client_path].file_name = client_path
+        for server_path, source_asset in iter_python_paks():
+            logging.trace(f"Prebuilt Python: '{source_asset.client_path.name}'")
+            staged_assets[server_path].file_name = source_asset.client_path
         return
 
     # The compyler was written assuming a minimum of Python 2.3
@@ -259,21 +260,21 @@ def reuse(cached_lists: Dict[Tuple[str, str], Sequence[manifest.ListEntry]],
         for (client_directory, extension), entries in cached_lists.items():
             if client_directory.lower() == "python" and extension.lower() == "pak":
                 for i in entries:
-                    yield i.file_name, list_path.joinpath(i.file_name)
+                    yield i.file_name, build_server_path(i.file_name), list_path.joinpath(i.file_name)
 
     if not any(iter_python_paks()):
         logging.critical("No Python pak files were found to recycle.")
         logging.critical("No client python code will be available!")
         return
 
-    for pak_client_path, source_path in iter_python_paks():
+    for pak_client_path, pak_server_path, source_path in iter_python_paks():
         if not source_path.exists():
             logging.error(f"Cannot recycle '{pak_client_path}' from '{source_path}'!")
             continue
 
         logging.debug(f"Recycling Python pak '{pak_client_path}'")
-        source_assets[pak_client_path] = Asset(None, source_path, pak_client_path, set(("python",)))
-        staged_asset = staged_assets[pak_client_path]
+        source_assets[pak_server_path] = Asset(None, source_path, pak_client_path, set(("python",)))
+        staged_asset = staged_assets[pak_server_path]
         staged_asset.file_name = pak_client_path
         # This was already encrypted (I hope?) by a previous run.
         staged_asset.flags |= ManifestFlags.dont_encrypt
