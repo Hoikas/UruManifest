@@ -70,10 +70,14 @@ UruManifest supports additional sections in and assigns additional meaning to th
     - These files are assumed to be for Windows x86, eg `*.exe` and `*.dll`.
     - These files are not listed in the external client manifest.
 - `mac`
-    - These files are used by the legacy TransGaming Cider Wrapper, not a native mac client.
+    - These files are assumed to be for Intel maxOS x86.
+    - These files are not listed in the internal client manifest.
 - `prereq` - **NEW**
     - These files are assumed to be ***executables*** for Windows x86, eg `*.exe` and `*.msi`.
     - These files are listed in the *DependencyPatcher*, *ExternalPatcher*, and *InternalPatcher* manifests.
+
+Additionally, AMD64 binaries may be supplied by adding the suffix `64` to the keys referenced above,
+eg: `external64`, `internal64`, `mac64`, `prereq64`.
 
 ## Server Considerations
 Currently, only DirtSand and MOSS servers are supported.

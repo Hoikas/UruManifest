@@ -44,7 +44,7 @@ crypt_types = {
 }
 
 # All gather sections that list installer prerequisites
-gather_installers = frozenset(("prereq",))
+gather_installers = frozenset(("prereq", "prereq64"))
 
 class _manifests(NamedTuple):
     thin: str
@@ -53,10 +53,13 @@ class _manifests(NamedTuple):
 
 
 gather_manifests = {
-    # Windows (x86)
+    # Windows
     "external": _manifests("ThinExternal", "ExternalPatcher", "External"),
+    "external64": _manifests("ThinExternal64", "ExternalPatcher64", "External64"),
     "internal": _manifests("ThinInternal", "InternalPatcher", "Internal"),
+    "internal64": _manifests("ThinInternal64", "InternalPatcher64", "Internal64"),
     "prereq": _manifests(None, "DependencyPatcher", None),
+    "prereq64": _manifests(None, "DependencyPatcher64", None),
 
     # Legacy -- to be deleted??? -- TransGaming Cider Wrapper (macOS)
     "mac": _manifests(None, None, "macExternal"),
@@ -75,15 +78,20 @@ gather_lut = {
     "avi": _directorytuple("avi", "video"),
 
     "external": _directorytuple("", "client/windows_ia32/external"),
+    "external64": _directorytuple("", "client/windows_amd64/external"),
     "internal": _directorytuple("", "client/windows_ia32/internal"),
+    "internal64": _directorytuple("", "client/windows_amd64/internal"),
     "mac": _directorytuple("", "client/macos_ia32/external"),
     "prereq": _directorytuple("", "dependencies/windows_ia32"),
+    "prereq64": _directorytuple("", "dependencies/windows_amd64"),
 }
 
 # HAX: Copy the contents of the value's manifest to the end of the key's manifest
 manifest_copy_from = {
     "ExternalPatcher": ("DependencyPatcher",),
+    "ExternalPatcher64": ("DependencyPatcher64",),
     "InternalPatcher": ("DependencyPatcher",),
+    "InternalPatcher64": ("DependencyPatcher64",),
 }
 
 class ManifestFlags(enum.IntFlag):
@@ -105,7 +113,9 @@ naughty_path_sequences = {"..", "../", "..\\"}
 
 patcher_lut = {
     "external": "UruLauncher.exe",
+    "external64": "UruLauncher.exe",
     "internal": "plUruLauncher.exe",
+    "internal64": "plUruLauncher.exe",
 }
 
 @enum.unique
