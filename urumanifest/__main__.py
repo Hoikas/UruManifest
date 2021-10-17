@@ -15,6 +15,7 @@
 
 import argparse
 from collections import defaultdict
+from contextlib import ExitStack
 import functools
 import itertools
 import logging
@@ -28,6 +29,7 @@ import assets
 from config import dump_default_config, read_config
 import commit
 import dependencies
+import github
 import manifest, dirtsand, moss
 import plasma_python
 import utils
@@ -50,6 +52,11 @@ else:
     sub_parsers = _sub_parsers_call()
 # End HAX
 
+def _add_pull_args(parser):
+    rev_group = parser.add_mutually_exclusive_group()
+    rev_group.add_argument("--head", action="store_true", default=False, help="use the latest HEAD from the remote")
+    rev_group.add_argument("--revision", type=str, help="use a specific revision (commit sha)")
+
 dumpconfig_parser = sub_parsers.add_parser("dumpconfig")
 
 generate_parser = sub_parsers.add_parser("generate")
@@ -59,6 +66,13 @@ method_group.add_argument("--force", action="store_true", default=False, help="f
 method_group.add_argument("--stage", action="store_true", default=False, help="stage the delta into the staging directory")
 generate_parser.add_argument("--reuse-python", action="store_true", default=False, help="skip regeneration of python.pak and reuse existing generated python assets")
 generate_parser.add_argument("--threads", type=int, help="maximum worker thread count", default=0)
+pull_group = generate_parser.add_mutually_exclusive_group()
+pull_group.add_argument("--no-pull-gha", action="store_true", default=False, help="don't download the game client from github")
+_add_pull_args(pull_group)
+
+pull_parser = sub_parsers.add_parser("pull-gha")
+_add_pull_args(pull_parser)
+pull_parser.add_argument("--dry-run", action="store_true", default=False, help="don't produce any output")
 
 def dumpconfig(args):
     dump_default_config(args.config)
@@ -92,6 +106,11 @@ def generate(args):
 
         py_version = (config.getint("python", "major"), config.getint("python", "minor"))
         py_exe = config.getinfilepathopt("python", "path")
+
+        repo = config.get("github", "repository")
+        branch = config.get("github", "branch")
+        token = config.get("github", "token")
+        gha_staging_path_in = config.getoutdirpath("github", "staging_path")
     except Exception as e:
         # reraise as AssetError so config errors look sane.
         raise assets.AssetError(f"Config problem: {e}")
@@ -121,17 +140,6 @@ def generate(args):
     if not py_exe:
         logging.critical(f"Could not find Python {py_version[0]}.{py_version[1]}")
 
-    cached_db = assets.load_asset_database(mfs_path_in, list_path_in, db_type)
-    prebuilts = assets.load_prebuilt_assets(game_data_path, game_scripts_path, py_exe)
-    gathers = assets.load_gather_assets(gather_path)
-    source_assets = assets.merge_asset_dicts(prebuilts, gathers)
-
-    ncpus = args.threads if args.threads > 0 else None
-    staged_assets = defaultdict(manifest.ManifestEntry)
-    age_manifests = dependencies.find_age_dependencies(source_assets, staged_assets, ncpus)
-    client_manifests = dependencies.find_client_dependencies(source_assets, staged_assets)
-    dependencies.find_script_dependencies(source_assets, staged_assets)
-
     with tempfile.TemporaryDirectory() as td:
         temp_path = Path(td)
         if args.dry_run:
@@ -140,6 +148,35 @@ def generate(args):
             # dry-run forces these files to be copied for testing purposes
             server_age_path_out = temp_path.joinpath("server_age_files")
             server_sdl_path_out = temp_path.joinpath("server_sdl_files")
+
+        all_gather_paths = [i for i in gather_path.iterdir() if i.is_dir()]
+        if not args.no_pull_gha:
+            if args.dry_run:
+                gha_staging_path_out = temp_path.joinpath("gha_staging")
+            else:
+                gha_staging_path_out = gha_staging_path_in
+
+            rev = "HEAD" if args.head else args.revision
+            gha_gathers = github.find_client_gather_paths(
+                gha_staging_path_in,
+                gha_staging_path_out,
+                game_scripts_path,
+                repo, branch,
+                rev,
+                token
+            )
+            all_gather_paths.extend(gha_gathers)
+
+        cached_db = assets.load_asset_database(mfs_path_in, list_path_in, db_type)
+        prebuilts = assets.load_prebuilt_assets(game_data_path, game_scripts_path, py_exe)
+        gathers = assets.load_gather_assets(*all_gather_paths)
+        source_assets = assets.merge_asset_dicts(prebuilts, gathers)
+
+        ncpus = args.threads if args.threads > 0 else None
+        staged_assets = defaultdict(manifest.ManifestEntry)
+        age_manifests = dependencies.find_age_dependencies(source_assets, staged_assets, ncpus)
+        client_manifests = dependencies.find_client_dependencies(source_assets, staged_assets)
+        dependencies.find_script_dependencies(source_assets, staged_assets)
 
         if args.reuse_python:
             # Dry runs can overwrite the list output path with a temp location. We want to use the
@@ -169,6 +206,43 @@ def generate(args):
                                    mfs_path_out, list_path_out, db_type)
         assets.save_asset_database(cached_db.manifests, cached_db.lists, staged_assets, manifests,
                                    secure_lists, mfs_path_out, list_path_out, db_type, droid_key)
+
+    return True
+
+def pull_gha(args):
+    config = read_config(args.config)
+
+    try:
+        repo = config.get("github", "repository")
+        branch = config.get("github", "branch")
+        token = config.get("github", "token")
+        gha_staging_path_in = config.getoutdirpath("github", "staging_path")
+        game_scripts_path = config.getindirpath("source", "scripts_path")
+    except Exception as e:
+        # reraise as AssetError so config errors look sane.
+        raise assets.AssetError(f"Config problem: {e}")
+
+    with ExitStack() as stack:
+        if args.dry_run:
+            temp_path = stack.enter_context(tempfile.TemporaryDirectory())
+            gha_staging_path_out = Path(temp_path)
+        else:
+            gha_staging_path_out = gha_staging_path_in
+
+        rev = "HEAD" if args.head else args.revision
+        gather_paths = github.find_client_gather_paths(
+            gha_staging_path_in,
+            gha_staging_path_out,
+            game_scripts_path,
+            repo,
+            branch,
+            rev,
+            token
+        )
+
+        # Exhaust the generator
+        for i in gather_paths:
+            logging.info(f"Workflow gather path: {i}")
 
     return True
 
@@ -202,13 +276,13 @@ if __name__ == "__main__":
     try:
         # Go go go
         try:
-            cmdcall = globals().get(args.command)
+            cmdcall = globals().get(args.command.replace("-", "_"))
             if cmdcall:
                 result = cmdcall(args)
             else:
                 logging.error("No command specified. Use `-h` to see help.")
                 result = False
-        except assets.AssetError as e:
+        except (assets.AssetError, github.GitHubError) as e:
             logging.error(str(e))
             raise
         except Exception as e:

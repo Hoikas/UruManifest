@@ -146,3 +146,10 @@ server_subdirectory_lut = {
     ".py": "python_code",
     ".sdl": "sdl",
 }
+
+workflow_lut = {
+    "plasma-windows-x86-external-release": "external",
+    "plasma-windows-x64-external-release": "external64",
+    "plasma-windows-x86-internal-release": "internal",
+    "plasma-windows-x64-internal-release": "internal64",
+}

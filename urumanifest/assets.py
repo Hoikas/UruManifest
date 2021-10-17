@@ -217,14 +217,17 @@ def load_gather_assets(*paths: Path) -> Dict[Path, Asset]:
                 num_assets += handle_control_assets(gather_path, source_path, client_directory, server_directory, key, value)
         return num_assets
 
-    gather_iter = (path.iterdir() for path in paths if path.is_dir())
-    for i in itertools.chain(*gather_iter):
-        if not i.is_dir():
-            logging.warning(f"Skipping non-directory gather path '{i.name}'!")
+    for i in (Path(i) for i in paths):
+        if i.is_file() and i.suffix.lower() == ".json":
+            gather_path, control_path = i.parent, i
+        elif i.is_dir():
+            gather_path, control_path = i, None
+        else:
+            logging.warning(f"Skipping unknown gather path type {i.name}")
             continue
 
         logging.trace(f"Loading Gather package '{i.name}'...")
-        num_assets = handle_gather_package(i)
+        num_assets = handle_gather_package(gather_path, control_path)
         logging.trace(f"Loaded {num_assets} from Gather package '{i.name}'")
 
     logging.debug(f"Loaded {len(gathers)} assets from gathers.")

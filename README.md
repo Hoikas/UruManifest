@@ -8,6 +8,7 @@ assets and gather packages.
 ## Dependencies
 - [Python](https://www.python.org) 3.6 or higher
 - [pybind11](https://github.com/pybind/pybind11)
+- [tqdm](https://github.com/tqdm/tqdm)
 
 ## Related Projects
 - [moul-assets](https://github.com/H-uru/moul-assets) - Compiled Uru game assets
@@ -18,8 +19,8 @@ Clone the repository into the directory of your choice. For the best performance
 to build UruManifest's crypto module by executing `pip3 install .` from the directory that you
 cloned the project into. Note that this module uses pybind11 and therefore requires a C++11
 compliant compiler. This is module optional, however, and UruManifest will function correctly albiet
-more slowly without it. If you are using Python 3.6, then you *must* install the `dataclasses`
-backport from Python 3.7 by executing `pip3 install -r requirements.txt`.
+more slowly without it. Be sure to install the Python dependencies of tqdm and dataclasses (on
+Python 3.6) by executing `pip3 install -r requirements.txt`.
 
 Additionally, to build a Python.pak for your shard, you will need to have the version of Python used
 by Uru itself. For H-uru based Uru clients, this is Python 3.8 (or higher). For Cyan's Myst Online:
@@ -59,8 +60,8 @@ to be imported into the client directory. These gather packages may contain file
 ages, clients, patchers, and redistributable installers.
 
 **NOTE**: UruManifest is currently unable to automate detection of client executables, libraries,
-and redistributables. Therefore, it is required to create gather packages for these items for them
-to be included in the generated file server.
+and redistributables. Therefore, it is required to use the GitHub Actions integration described
+below or manually create gather packages for your client builds.
 
 UruManifest supports additional sections in and assigns additional meaning to the gather control JSON file:
 - `external`
@@ -78,6 +79,22 @@ UruManifest supports additional sections in and assigns additional meaning to th
 
 Additionally, AMD64 binaries may be supplied by adding the suffix `64` to the keys referenced above,
 eg: `external64`, `internal64`, `mac64`, `prereq64`.
+
+## GitHub Actions Integration
+UruManifest can deploy clients build from your fork of Plasma's GitHub Actions workflow. To do so,
+you will need to configure the `token` under the `[github]` section of the configuration file with
+a [personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)
+with the scope `repo:read`. Additionally, be sure to configure the `repo` and `branch` items.
+
+If you have supplied a GitHub token, when you execute the command `python3 urumanifest generate`,
+UruManifest will check the path supplied for the game scripts directory. If it is a clone of Plasma,
+then UruManifest will attempt to fetch the artifacts from a GitHub Actions workflow that matches its
+current revision. If git is not installed or the path is not a valid clone, the current HEAD of the
+remote you configured will be used. You may force usage of the current HEAD by passing the `--head`
+argument. Alternatively, you may manually skip this process using the `--no-pull-gha` argument.
+
+When using this integration, keep in mind that GitHub Actions will only retain artifacts for 90-days.
+If the artifacts are expired, then the GitHub Actions integration will fail.
 
 ## Server Considerations
 Currently, only DirtSand and MOSS servers are supported.

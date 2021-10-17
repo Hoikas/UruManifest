@@ -85,7 +85,21 @@ _defaults = {
 
         "scripts_path": _ConfigItem("~/uru/scripts",
             "This is the path to the moul-scripts repository used by this game."),
-    }
+    },
+
+    "github": {
+        "repository": _ConfigItem("H-uru/Plasma",
+            "This is the repository the engine should be downloaded from."),
+
+        "branch": _ConfigItem("master",
+            "This is the branch of the repository workflow artifacts should\n"
+            "be downloaded from."),
+
+        "token": _ConfigItem("", "A GitHub Token with the repo:read scope."),
+
+        "staging_path": _ConfigItem("~/uru/game_binaries",
+            "Directory to stage the downloaded engine binaries.")
+    },
 }
 
 def _get_path(value, must_exist=None, is_dir=None, mkdir=False):
