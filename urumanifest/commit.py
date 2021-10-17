@@ -154,8 +154,8 @@ def copy_secure_assets(secure_lists: Dict[Tuple[str, str], Set[Path]], source_as
         # lying around. Gulp.
         for server_path in secure_assets:
             source_asset = source_assets[server_path]
-            asset_input_path = input_path.joinpath(server_path)
-            asset_output_path = output_path.joinpath(server_path)
+            asset_input_path = input_path.joinpath(source_asset.client_path)
+            asset_output_path = output_path.joinpath(source_asset.client_path)
             asset_source_path = source_asset.source_path
             fut = executor.submit(_compare_files, asset_source_path, asset_input_path, key=droid_key)
             fut.add_done_callback(functools.partial(copy_asset, asset_source_path, asset_output_path, server_path))

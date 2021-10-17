@@ -70,7 +70,11 @@ def build_server_path(client_path: Path, server_directory: Optional[str] = None,
     if not server_directory:
         server_directory = gather_lut[category].server_directory
     server_subdirectory = server_subdirectory_lut.get(client_path.suffix.lower(), "")
-    return Path(server_directory, server_subdirectory, client_path.name)
+
+    # Something of a hack, but we lop off the first subdirectory of any path so we don't lose
+    # any of the Python package info.
+    parts = client_path.parts[1:] if len(client_path.parts) > 1 else client_path.parts
+    return Path(server_directory, server_subdirectory, *parts)
 
 def lookup_asset(source_assets: Dict[Path, Asset], client_path: Path,
                  server_directory: Optional[str] = None,

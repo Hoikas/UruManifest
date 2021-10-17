@@ -37,11 +37,12 @@ def _build_module_name(script_client_path: Path, source_assets: Dict[Path, Asset
     # Every directory containing an __init__.py file is a module. So, we need to scan backwards
     # to see what this script's module name is. Example: the KI's PFM `xKI` module will import
     # the `ki` module (ki/__init__.py) which has submodules `ki.xKIChat`, etc.
-    base_py_path, working_path = Path("Python"), script_client_path
+    base_py_path, working_path = build_server_path(Path("Python"), category="python"), script_client_path
     module_name = working_path.name
     while working_path != base_py_path:
         working_path = working_path.parent
         working_init_path = working_path.joinpath("__init__.py")
+        working_init_path = build_server_path(working_init_path, category="python")
         if working_init_path not in source_assets:
             break
         module_name = f"{working_path.stem}.{module_name}"
