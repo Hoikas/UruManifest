@@ -21,7 +21,7 @@ import itertools
 import logging
 import math
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 import tempfile
@@ -361,21 +361,25 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
         output_path = staging_path.joinpath(subdir_name)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        client_directory = zipfile.Path(archive, "client/")
-        desired_members = [i for i in client_directory.iterdir() if i.is_file()]
+        def iter_client_dir():
+            for i in filter(lambda x: not x.is_dir(), archive.infolist()):
+                member_path = PurePosixPath(i.filename)
+                if len(member_path.parts) == 2 and member_path.parts[0] == "client":
+                    yield i
+
+        desired_members = list(iter_client_dir())
         with tqdm_logging.tqdm_logging_redirect(
             desired_members,
             desc=f"Extracting {name}",
             unit="file",
             leave=False
         ) as progress:
-            for i in progress:
-                info = archive.getinfo(f"client/{i.name}")
+            for info in progress:
                 logging.trace(f"Extracting {info.filename}")
                 _unpack_member(output_path, archive, info)
 
         gather_key = workflow_lut[name]
-        gather_package = { gather_key: [i.name for i in desired_members] }
+        gather_package = { gather_key: [PurePosixPath(i.filename).name for i in desired_members] }
         with output_path.joinpath("control.json").open("w") as fp:
             json.dump(gather_package, fp, indent=2)
 
