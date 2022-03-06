@@ -107,6 +107,7 @@ class ManifestFlags(enum.IntFlag):
     dirty = (1<<18)
     dont_encrypt = (1<<19)
     consumable = (1<<20)
+    optional = (1<<21)
 
 
 naughty_path_sequences = {"..", "../", "..\\"}

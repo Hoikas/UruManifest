@@ -61,7 +61,8 @@ def find_age_dependencies(source_assets: Dict[Path, Asset],
 
     def track_dependency(age_name: str, client_path: Path, server_path: Path, flags: ManifestFlags = 0):
         if server_path not in source_assets:
-            logging.error(f"Dependency file '{client_path}' (provided by: '{server_path}') missing! Used by '{age_name}'.")
+            logfxn = logging.debug if flags & ManifestFlags.optional else logging.error
+            logfxn(f"Dependency file '{client_path}' (provided by: '{server_path}') missing! Used by '{age_name}'.")
         else:
             logging.trace(f"Age '{age_name}' dependency: {client_path}")
             staged_asset = staged_assets[server_path]
@@ -124,8 +125,9 @@ def _find_page_externals(source_path: Path) -> Iterable[_FlaggedDependency]:
             result.append(_FlaggedDependency(client_path, server_path, flags))
 
         for sbuf in page_info.get_objects(plasmoul.plSoundBuffer):
-            client_path = Path("sfx", sbuf.file_name)
-            server_path = build_server_path(client_path)
+            # The source sound file ahoy.
+            sfx_client_path = Path("sfx", sbuf.file_name)
+            sfx_server_path = build_server_path(sfx_client_path)
             if sbuf.stream:
                 flags = ManifestFlags.sound_stream_compressed
             else:
@@ -133,7 +135,12 @@ def _find_page_externals(source_path: Path) -> Iterable[_FlaggedDependency]:
                     flags = ManifestFlags.sound_cache_split
                 else:
                     flags = ManifestFlags.sound_cache_stereo
-            result.append(_FlaggedDependency(client_path, server_path, flags))
+            result.append(_FlaggedDependency(sfx_client_path, sfx_server_path, flags))
+
+            # The optional subtitle file ahoy.
+            sub_client_path = sfx_client_path.with_suffix(".sub")
+            sub_server_path = build_server_path(sub_client_path)
+            result.append(_FlaggedDependency(sub_client_path, sub_server_path, ManifestFlags.optional))
 
         if page_info.get_keys(plasmoul.plRelevanceRegion):
             client_path = Path("dat", f"{page_info.age}.csv")
