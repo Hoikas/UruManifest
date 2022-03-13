@@ -102,3 +102,13 @@ def get_droid_key(droid_key):
         key.append(int.from_bytes(buf[8:12], byteorder="big"))
         key.append(int.from_bytes(buf[12:16], byteorder="big"))
     return key
+
+def is_path_relative_to(parent_path: Path, child_path: Path) -> bool:
+    # Path.is_relative_to() was added in Python 3.9, but we need to
+    # work all the way back to Python 3.6, so use this shim.
+    try:
+        child_path.relative_to(parent_path)
+    except ValueError:
+        return False
+    else:
+        return True

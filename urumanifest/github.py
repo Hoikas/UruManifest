@@ -46,6 +46,13 @@ class GitHubError(Exception):
     pass
 
 
+class GitHubPullRequest(NamedTuple):
+    name: str
+    fork: str
+    ref: str
+    sha: str
+
+
 class GitHub:
     def __init__(self, token: Optional[str] = None):
         if not token:
@@ -95,6 +102,20 @@ class GitHub:
             raise
         else:
             return result["commit"]["sha"]
+
+    def get_pull_request(self, repo: str, pr: int) -> GitHubPullRequest:
+        logging.debug(f"Looking up pull request #{pr}")
+
+        result = self._invoke_request(
+            "GET",
+            f"/repos/{repo}/pulls/{pr}"
+        )
+        return GitHubPullRequest(
+            result["title"],
+            result["head"]["repo"]["full_name"],
+            result["head"]["ref"],
+            result["head"]["sha"]
+        )
 
     def get_workflow_run(self, repo: str, rev: str, run_name: str = "CI") -> Optional[int]:
         logging.debug(f"Looking up Actions run ID for commit {rev}")

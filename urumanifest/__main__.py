@@ -33,6 +33,7 @@ import github
 import manifest, dirtsand, moss
 import plasma_python
 import utils
+import working
 
 program_description = "Uru Manifest Generator"
 main_parser = argparse.ArgumentParser(description=program_description)
@@ -53,9 +54,8 @@ else:
 # End HAX
 
 def _add_pull_args(parser):
-    rev_group = parser.add_mutually_exclusive_group()
-    rev_group.add_argument("--head", action="store_true", default=False, help="use the latest HEAD from the remote")
-    rev_group.add_argument("--revision", type=str, help="use a specific revision (commit sha)")
+    parser.add_argument("--head", action="store_true", default=False, help="use the latest HEAD from the remote")
+    parser.add_argument("--revision", type=str, help="use a specific revision (commit sha)")
 
 dumpconfig_parser = sub_parsers.add_parser("dumpconfig")
 
@@ -68,11 +68,21 @@ generate_parser.add_argument("--reuse-python", action="store_true", default=Fals
 generate_parser.add_argument("--threads", type=int, help="maximum worker thread count", default=0)
 pull_group = generate_parser.add_mutually_exclusive_group()
 pull_group.add_argument("--no-pull-gha", action="store_true", default=False, help="don't download the game client from github")
-_add_pull_args(pull_group)
+specific_ex_group = pull_group.add_mutually_exclusive_group()
+_add_pull_args(specific_ex_group)
+pull_group.add_argument("--rebuild-working", choices=["engine", "assets"], nargs="*", help="rebuild working branches")
 
 pull_parser = sub_parsers.add_parser("pull-gha")
-_add_pull_args(pull_parser)
+_add_pull_args(pull_parser.add_mutually_exclusive_group())
 pull_parser.add_argument("--dry-run", action="store_true", default=False, help="don't produce any output")
+
+working_parser = sub_parsers.add_parser("rebuild-working")
+act_group = working_parser.add_mutually_exclusive_group()
+act_group.add_argument("--dry-run", action="store_true", default=False, help="don't produce any output")
+act_group.add_argument("--push", action="store_true", default=False, help="push the result to upstream")
+skip_group = working_parser.add_argument_group()
+skip_group.add_argument("--no-engine", action="store_true", help="don't rebuild the engine working branch")
+skip_group.add_argument("--no-assets", action="store_true", help="don't rebuild the assets working branch")
 
 def dumpconfig(args):
     dump_default_config(args.config)
@@ -111,9 +121,52 @@ def generate(args):
         branch = config.get("github", "branch")
         token = config.get("github", "token")
         gha_staging_path_in = config.getoutdirpath("github", "staging_path")
+
+        if args.rebuild_working is not None:
+            rebuild_working_engine = not args.rebuild_working or "engine" in args.rebuild_working
+            rebuild_working_assets = not args.rebuild_working or "assets" in args.rebuild_working
+        else:
+            rebuild_working_engine = False
+            rebuild_working_assets = False
+
+        if rebuild_working_engine:
+            engine_repo_path = config.getindirpath("working", "engine_repo")
+        else:
+            engine_repo_path = None
+        if rebuild_working_assets:
+            assets_repo_path = config.getindirpath("working", "assets_repo")
+        else:
+            assets_repo_path = None
     except Exception as e:
         # reraise as AssetError so config errors look sane.
         raise assets.AssetError(f"Config problem: {e}")
+
+    # Rebuild the working branches first.
+    if rebuild_working_engine or rebuild_working_assets:
+        if args.dry_run:
+            raise assets.AssetError("Rebuilding working branches and dry run are mutually exclusive.")
+        if engine_repo_path is not None and not utils.is_path_relative_to(engine_repo_path, game_scripts_path):
+            raise assets.AssetError(
+                "The provided game scripts path is not a subdirectory of the engine repository. "
+                "Rebuilding the engine's working branch is a spurious operation."
+            )
+        if assets_repo_path is not None and not utils.is_path_relative_to(assets_repo_path, game_data_path):
+            raise assets.AssetError(
+                "The provided game data path is not a subdirectory of the assets repository. "
+                "Rebuilding the assets' working branch is a spurious operation."
+            )
+
+        working_path = gather_path.joinpath("working.json")
+        if not working_path.exists():
+            raise assets.AssetError(f"The working branch instructions file '{working_path}' is missing!")
+        working.rebuild_working_branch(
+            engine_repo_path,
+            assets_repo_path,
+            working_path,
+            token,
+            dry_run=False,
+            push=True
+        )
 
     # If we are staging, we'll want to clear out the contents of the staging paths.
     if args.stage:
@@ -244,6 +297,38 @@ def pull_gha(args):
         for i in gather_paths:
             logging.info(f"Workflow gather path: {i}")
 
+    return True
+
+def rebuild_working(args):
+    config = read_config(args.config)
+
+    try:
+        token = config.get("github", "token")
+        gather_path = config.getindirpath("source", "gather_path")
+        if not args.no_engine:
+            engine_path = config.getindirpath("working", "engine_repo")
+        else:
+            engine_path = None
+        if not args.no_assets:
+            assets_path = config.getindirpath("working", "assets_repo")
+        else:
+            assets_path = None
+    except Exception as e:
+        # reraise as AssetError so config errors look sane.
+        raise assets.AssetError(f"Config problem: {e}")
+
+    working_path = gather_path.joinpath("working.json")
+    if not working_path.exists():
+        raise assets.AssetError(f"The working branch instructions file '{working_path}' is missing!")
+
+    working.rebuild_working_branch(
+        engine_path,
+        assets_path,
+        working_path,
+        token,
+        args.dry_run,
+        args.push
+    )
     return True
 
 if __name__ == "__main__":

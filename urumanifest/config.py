@@ -100,6 +100,11 @@ _defaults = {
         "staging_path": _ConfigItem("~/uru/game_binaries",
             "Directory to stage the downloaded engine binaries.")
     },
+
+    "working": {
+        "engine_repo": _ConfigItem("~/uru/Plasma"),
+        "assets_repo": _ConfigItem("~/uru/moul-assets"),
+    },
 }
 
 def _get_path(value, must_exist=None, is_dir=None, mkdir=False):
