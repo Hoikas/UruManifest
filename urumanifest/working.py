@@ -288,7 +288,7 @@ def rebuild_working_branch(engine_repo: Optional[Path], assets_repo: Optional[Pa
         logging.error(f"Definitions file {defns_path} was not found. Skipping.")
         return
 
-    repos = dict(engine=engine_repo, assets=assets_repo)
+    repos = dict(assets=assets_repo, engine=engine_repo)
     with defns_path.open("r") as defns_file:
         defns = json.load(defns_file)
         for repo_name, repo_defns in defns.items():
