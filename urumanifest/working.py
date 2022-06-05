@@ -97,6 +97,14 @@ def _fetch_all_refs(output_path: Path, defns: Dict[str, Any], token: Optional[st
             stdout=subprocess.DEVNULL,
             check=True
         )
+        lfs_fetch = subprocess.run(
+            ["git", "lfs", "fetch", i.url, i.sha],
+            cwd=output_path,
+            stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+        )
+        if lfs_fetch.returncode != 0:
+            logging.warning("LFS fetch failed, this means bad things may happen...")
 
         # LTGM, yield the commit for future use
         yield i
