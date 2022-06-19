@@ -17,6 +17,7 @@ import concurrent.futures
 from dataclasses import dataclass
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -219,13 +220,23 @@ def _merge(output_path: Path, origin: _RefCommit, upstream: _RefCommit, ref: _Re
     if ref.type == "cherry-pick":
         logging.debug(f"Cherry-picking {rev_range} into the working branch...")
         if not dry_run:
+            environ = os.environ.copy()
+            environ["GIT_LFS_SKIP_SMUDGE"] = "1"
             cherry_pick = subprocess.run(
                 ["git", "cherry-pick", "--allow-empty", "-n", rev_range],
                 cwd=output_path,
+                env=environ,
                 stdout=subprocess.DEVNULL,
                 text=True
             )
             if cherry_pick.returncode != 0:
+                # We were cherry-picking to the index, so we need to reset.
+                subprocess.run(
+                    ["git", "reset", "--hard", "master"],
+                    cwd=output_path,
+                    stdout=subprocess.DEVNULL,
+                    text=True
+                )
                 subprocess.run(
                     ["git", "cherry-pick", "--abort"],
                     cwd=output_path,
@@ -254,6 +265,16 @@ def _merge(output_path: Path, origin: _RefCommit, upstream: _RefCommit, ref: _Re
                 check=True,
                 text=True
             )
+
+def _lfs_fetch(output_path: Path):
+    logging.info("Checking out files from git-lfs...")
+    subprocess.run(
+        ["git", "lfs", "checkout"],
+        cwd=output_path,
+        stdout=subprocess.DEVNULL,
+        check=True,
+        text=True
+    )
 
 def _push(output_path: Path, url: str, ref: str):
     logging.info(f"Pushing result to {url}...")
@@ -285,6 +306,7 @@ def _rebuild_working_branch_for_repo(repo_name: str, output_path: Path, defns: D
         _create_branch(output_path, upstream.ref, origin.sha)
     for ref in all_refs:
         _merge(output_path, origin, upstream, ref, dry_run)
+    _lfs_fetch(output_path)
     if push and not dry_run:
         _push(output_path, upstream.url, upstream.ref)
 
