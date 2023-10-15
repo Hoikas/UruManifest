@@ -62,8 +62,7 @@ gather_manifests = {
     "prereq64": _manifests(None, "DependencyPatcher64", None),
 
     # Legacy -- to be deleted??? -- TransGaming Cider Wrapper (macOS)
-    "mac": _manifests(None, None, "macExternal")
-    ,
+    "mac": _manifests(None, None, "macExternal"),
     "macInternal": _manifests(None, None, "MacInternal"),
     "macExternal": _manifests(None, None, "MacExternal"),
 }
