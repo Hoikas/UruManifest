@@ -17,7 +17,6 @@ from collections import defaultdict
 import concurrent.futures
 from dataclasses import dataclass
 import functools
-from genericpath import isdir
 import gzip
 import hashlib
 import itertools
@@ -37,10 +36,9 @@ _BUFFER_SIZE = 10 * 1024 * 1024
 
 def _compress_asset(source_path: Path, output_path: Path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    if isdir(source_path):
-        tar = tarfile.TarFile.open(output_path, "w:gz")
-        tar.add(source_path,  arcname="")
-        tar.close()
+    if source_path.is_dir():
+        with tarfile.TarFile.open(output_path, "w:gz") as tar:
+            tar.add(source_path,  arcname="")
         h = hashlib.md5(open(output_path,'rb').read())
         return h.hexdigest(), output_path.stat().st_size
     with source_path.open("rb") as in_stream:
@@ -55,7 +53,7 @@ def _hash_asset(args: Tuple[Path, Path]) -> Tuple[Path, str, int]:
     server_path, source_path = args
     # One day, we will not use such a vulnerable hashing algo...
     h = hashlib.md5()
-    if source_path.is_dir:
+    if source_path.is_dir():
         for subdir, dirs, files in os.walk(source_path):
             for f in files:
                 with Path(os.path.join(subdir, f)).open("rb") as in_stream:
