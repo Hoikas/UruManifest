@@ -382,7 +382,7 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
                 if len(member_path.parts) >=  2 and member_path.parts[0] == "client":
                     is_mac_app_bundle = member_path.parts[1].endswith(".app")
                     if not i.is_dir() and len(member_path.parts) ==  2:
-                        yield (Path(i.filename).name, i, Path(i.filename).name)
+                        yield (member_path.name, i, member_path.name)
                     elif is_mac_app_bundle and not i.is_dir():
                         path = i.filename[7:]
                         yield (Path(path), i, member_path.parts[1])
