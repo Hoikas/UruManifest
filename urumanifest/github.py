@@ -380,12 +380,14 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
         def iter_client_dir():
             for i in archive.infolist():
                 member_path = PurePosixPath(i.filename)
-                if len(member_path.parts) >=  2 and member_path.parts[0] == "client":
+                client_folder_name = "client"
+                if len(member_path.parts) >=  2 and member_path.parts[0] == client_folder_name:
                     is_mac_app_bundle = member_path.parts[1].endswith(".app")
                     if not i.is_dir() and len(member_path.parts) ==  2:
                         yield (member_path.name, i, member_path.name)
                     elif is_mac_app_bundle and not i.is_dir():
-                        path = i.filename[7:]
+                        # remove "client/"
+                        path = i.filename[len(client_folder_name)+1:]
                         yield (Path(path), i, member_path.parts[1])
 
 
