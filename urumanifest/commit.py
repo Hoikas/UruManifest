@@ -21,7 +21,6 @@ import gzip
 import hashlib
 import itertools
 import logging
-import os
 from pathlib import Path
 import shutil
 import tarfile
@@ -54,9 +53,10 @@ def _hash_asset(args: Tuple[Path, Path]) -> Tuple[Path, str, int]:
     # One day, we will not use such a vulnerable hashing algo...
     h = hashlib.md5()
     if source_path.is_dir():
-        for subdir, dirs, files in os.walk(source_path):
-            for f in files:
-                with Path(os.path.join(subdir, f)).open("rb") as in_stream:
+        for file in source_path.rglob("*"):
+            # ignore any intermediary directories
+            if not file.is_dir():
+                with file.open("rb") as in_stream:
                     _io_loop(in_stream, h.update)
     else:
         with source_path.open("rb") as in_stream:
