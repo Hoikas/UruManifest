@@ -377,10 +377,17 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
         output_path.mkdir(parents=True, exist_ok=True)
 
         def iter_client_dir():
-            for i in filter(lambda x: not x.is_dir(), archive.infolist()):
+            for i in archive.infolist():
                 member_path = PurePosixPath(i.filename)
-                if len(member_path.parts) == 2 and member_path.parts[0] == "client":
-                    yield i
+                if len(member_path.parts) >=  2 and member_path.parts[0] == "client":
+                    is_mac_app_bundle = member_path.parts[1].endswith(".app")
+                    if not i.is_dir() and len(member_path.parts) ==  2:
+                        yield (Path(i.filename).name, i, Path(i.filename).name)
+                    elif is_mac_app_bundle and not i.is_dir():
+                        path = i.filename[7:]
+                        yield (Path(path), i, member_path.parts[1])
+
+
 
         desired_members = list(iter_client_dir())
         with tqdm_logging.tqdm_logging_redirect(
@@ -390,19 +397,21 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
             leave=False
         ) as progress:
             for info in progress:
-                logging.trace(f"Extracting {info.filename}")
-                _unpack_member(output_path, archive, info)
+                logging.trace(f"Extracting {info[1].filename}")
+                _unpack_member(output_path, info[0], archive, info[1])
 
         gather_key = workflow_lut[name]
-        gather_package = { gather_key: [PurePosixPath(i.filename).name for i in desired_members] }
+        gather_package = { gather_key: [i[2] for i in desired_members] }
         with output_path.joinpath("control.json").open("w") as fp:
             json.dump(gather_package, fp, indent=2)
 
         database.workflow_gathers[name] = subdir_name
 
-def _unpack_member(output_path: Path, archive: zipfile.ZipFile, info: zipfile.ZipInfo):
+def _unpack_member(output_path: Path, output_subpath: Path, archive: zipfile.ZipFile, info: zipfile.ZipInfo):
     with archive.open(info, "r") as infile:
-        with output_path.joinpath(Path(info.filename).name).open("wb") as outfile:
+        full_path = output_path.joinpath(output_subpath)
+        Path(os.path.dirname(full_path)).mkdir(parents=True, exist_ok=True)
+        with full_path.open("wb") as outfile:
             block = 1024 * 8
             while True:
                 buf = infile.read(block)
