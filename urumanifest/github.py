@@ -369,6 +369,8 @@ def _update_artifacts(staging_path: Path, database: _WorkflowDatabase, repo: str
     database.current_sha = rev
     database.valid = True
 
+ArtifactInfo = namedtuple('ArtifactInfo', 'path zipinfo name')
+
 def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, name: str, artifact: tempfile.NamedTemporaryFile):
     logging.debug(f"Decompressing {name}.zip from {artifact.name}")
 
@@ -384,11 +386,11 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
                 if len(member_path.parts) >=  2 and member_path.parts[0] == client_folder_name:
                     is_mac_app_bundle = member_path.parts[1].endswith(".app")
                     if not i.is_dir() and len(member_path.parts) ==  2:
-                        yield (member_path.name, i, member_path.name)
+                        yield ArtifactInfo(path=member_path.name, zipinfo=i, name=member_path.name)
                     elif is_mac_app_bundle and not i.is_dir():
                         # remove "client/"
                         path = i.filename[len(client_folder_name)+1:]
-                        yield (Path(path), i, member_path.parts[1])
+                        yield ArtifactInfo(path=Path(path), zipinfo=i, name=member_path.parts[1])
 
 
 
@@ -400,11 +402,11 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
             leave=False
         ) as progress:
             for info in progress:
-                logging.trace(f"Extracting {info[1].filename}")
-                _unpack_member(output_path, info[0], archive, info[1])
+                logging.trace(f"Extracting {info.zipinfo.filename}")
+                _unpack_member(output_path, info.path, archive, info.zipinfo)
 
         gather_key = workflow_lut[name]
-        gather_package = { gather_key: [i[2] for i in desired_members] }
+        gather_package = { gather_key: [i.name for i in desired_members] }
         with output_path.joinpath("control.json").open("w") as fp:
             json.dump(gather_package, fp, indent=2)
 
