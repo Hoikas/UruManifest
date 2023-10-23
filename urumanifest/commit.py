@@ -23,6 +23,7 @@ import itertools
 import logging
 from pathlib import Path
 import shutil
+import tarfile
 from typing import Dict, NamedTuple, Optional, Set, Tuple, Union
 
 from assets import Asset, AssetDatabase, AssetError, AssetEntry
@@ -34,6 +35,13 @@ _BUFFER_SIZE = 10 * 1024 * 1024
 
 def _compress_asset(source_path: Path, output_path: Path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if source_path.is_dir():
+        with tarfile.TarFile.open(output_path, "w:gz") as tar:
+            tar.add(source_path, arcname="")
+        with output_path.open("rb") as in_stream:
+            h = hashlib.md5()
+            _io_loop(in_stream, h.update)
+        return h.hexdigest(), output_path.stat().st_size
     with source_path.open("rb") as in_stream:
         with gzip.open(output_path, "wb") as gz_stream:
             _io_loop(in_stream, gz_stream.write)
@@ -46,8 +54,15 @@ def _hash_asset(args: Tuple[Path, Path]) -> Tuple[Path, str, int]:
     server_path, source_path = args
     # One day, we will not use such a vulnerable hashing algo...
     h = hashlib.md5()
-    with source_path.open("rb") as in_stream:
-        _io_loop(in_stream, h.update)
+    if source_path.is_dir():
+        for file in source_path.rglob("*"):
+            # ignore any intermediary directories
+            if not file.is_dir():
+                with file.open("rb") as in_stream:
+                    _io_loop(in_stream, h.update)
+    else:
+        with source_path.open("rb") as in_stream:
+            _io_loop(in_stream, h.update)
     return server_path, h.hexdigest(), source_path.stat().st_size
 
 def _compare_files(newFile: Path, prevFile: Path, *, key=None) -> bool:
@@ -109,7 +124,11 @@ def compress_dirty_assets(manifests: Dict[str, Set[Path]], cached_assets: Dict[P
                       for i in compressed_assets)
         for server_path, staged_asset, source_asset, cached_asset in asset_iter:
             assert server_path.parent.name
-            asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.gz")
+
+            if staged_asset.flags & ManifestFlags.bundle:
+                asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.tgz")
+            else:
+                asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.gz")
             staged_asset.download_name = asset_output_path.relative_to(output_path)
 
             # While the old, sucky manifest generator was picky about what it compressed, we're not
