@@ -37,7 +37,10 @@ def _compress_asset(source_path: Path, output_path: Path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if source_path.is_dir():
         with tarfile.TarFile.open(output_path, "w:gz") as tar:
-            tar.add(source_path,  arcname="")
+            tar.add(source_path, arcname="")
+        with output_path.open("rb") as in_stream:
+            h = hashlib.md5()
+            _io_loop(in_stream, h.update)
         h = hashlib.md5(open(output_path,'rb').read())
         return h.hexdigest(), output_path.stat().st_size
     with source_path.open("rb") as in_stream:

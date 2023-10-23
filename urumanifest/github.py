@@ -369,7 +369,10 @@ def _update_artifacts(staging_path: Path, database: _WorkflowDatabase, repo: str
     database.current_sha = rev
     database.valid = True
 
-ArtifactInfo = namedtuple('ArtifactInfo', 'path zipinfo name')
+class ArtifactInfo(NamedTuple):
+    path: Path
+    zipinfo: zipfile.ZipInfo
+    name: str
 
 def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, name: str, artifact: tempfile.NamedTemporaryFile):
     logging.debug(f"Decompressing {name}.zip from {artifact.name}")
@@ -415,7 +418,7 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
 def _unpack_member(output_path: Path, output_subpath: Path, archive: zipfile.ZipFile, info: zipfile.ZipInfo):
     with archive.open(info, "r") as infile:
         full_path = output_path.joinpath(output_subpath)
-        Path(os.path.dirname(full_path)).mkdir(parents=True, exist_ok=True)
+        full_path.parent.mkdir(parents=True, exist_ok=True)
         with full_path.open("wb") as outfile:
             block = 1024 * 8
             while True:
