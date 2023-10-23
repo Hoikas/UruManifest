@@ -41,7 +41,6 @@ def _compress_asset(source_path: Path, output_path: Path):
         with output_path.open("rb") as in_stream:
             h = hashlib.md5()
             _io_loop(in_stream, h.update)
-        h = hashlib.md5(open(output_path,'rb').read())
         return h.hexdigest(), output_path.stat().st_size
     with source_path.open("rb") as in_stream:
         with gzip.open(output_path, "wb") as gz_stream:
@@ -126,8 +125,7 @@ def compress_dirty_assets(manifests: Dict[str, Set[Path]], cached_assets: Dict[P
         for server_path, staged_asset, source_asset, cached_asset in asset_iter:
             assert server_path.parent.name
 
-            if source_asset.source_path.is_dir():
-                staged_asset.flags |= ManifestFlags.bundle
+            if staged_asset.flags & ManifestFlags.bundle:
                 asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.tgz")
             else:
                 asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.gz")
