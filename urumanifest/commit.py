@@ -58,9 +58,9 @@ def _hash_asset(args: Tuple[Path, Path]) -> Tuple[Path, str, int]:
         bundle_name = source_path.stem
         # Guess the executable path - we could get the exact name if we could unpack the Info.plist
         # in a cross platform way.
-        source_path = source_path.joinpath(Path("Contents/MacOS/" + bundle_name))
+        source_path = source_path.joinpath(Path("Contents/MacOS",  bundle_name))
     with source_path.open("rb") as in_stream:
-         _io_loop(in_stream, h.update)
+        _io_loop(in_stream, h.update)
     return server_path, h.hexdigest(), source_path.stat().st_size
 
 def _compare_files(newFile: Path, prevFile: Path, *, key=None) -> bool:
