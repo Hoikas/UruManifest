@@ -409,7 +409,8 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
                 _unpack_member(output_path, info.path, archive, info.zipinfo)
 
         gather_key = workflow_lut[name]
-        gather_package = { gather_key: [i.name for i in desired_members] }
+        # Bundles might add multiple members with the same name - clean that up
+        gather_package = { gather_key: list(set([i.name for i in desired_members])) }
         with output_path.joinpath("control.json").open("w") as fp:
             json.dump(gather_package, fp, indent=2)
 
