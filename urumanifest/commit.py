@@ -33,11 +33,16 @@ import manifest
 
 _BUFFER_SIZE = 10 * 1024 * 1024
 
+def _add_to_tar_archive(info: tarfile.TarInfo):
+    info.mode = 0o777
+    return info
+
 def _compress_asset(source_path: Path, output_path: Path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if source_path.is_dir():
         with tarfile.TarFile.open(output_path, "w:gz") as tar:
-            tar.add(source_path, arcname="")
+            tar.gettarinfo(source_path, arcname="")
+            tar.add(source_path, arcname="", filter=_add_to_tar_archive)
         with output_path.open("rb") as in_stream:
             h = hashlib.md5()
             _io_loop(in_stream, h.update)
