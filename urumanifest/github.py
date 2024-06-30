@@ -393,7 +393,7 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
                     elif is_mac_app_bundle and not i.is_dir():
                         # remove "client/"
                         path = member_path.relative_to(client_folder_name)
-                        yield ArtifactInfo(path=path.name, zipinfo=i, name=member_path.parts[1])
+                        yield ArtifactInfo(path=path, zipinfo=i, name=member_path.parts[1])
 
 
 
