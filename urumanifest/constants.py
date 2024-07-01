@@ -63,8 +63,8 @@ gather_manifests = {
 
     # Legacy -- to be deleted??? -- TransGaming Cider Wrapper (macOS)
     "mac": _manifests(None, None, "macExternal"),
-    "macInternal": _manifests(None, None, "MacInternal"),
-    "macExternal": _manifests(None, None, "MacExternal"),
+    "macInternal": _manifests("MacThinInternal", None, "MacInternal"),
+    "macExternal": _manifests("MacThinExternal", None, "MacExternal"),
 }
 
 class _directorytuple(NamedTuple):
