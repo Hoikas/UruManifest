@@ -373,6 +373,7 @@ class ArtifactInfo(NamedTuple):
     path: Path
     zipinfo: zipfile.ZipInfo
     name: str
+    bundle: bool = False
 
 def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, name: str, artifact: tempfile.NamedTemporaryFile):
     logging.debug(f"Decompressing {name}.zip from {artifact.name}")
@@ -393,7 +394,7 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
                     elif is_mac_app_bundle and not i.is_dir():
                         # remove "client/"
                         path = member_path.relative_to(client_folder_name)
-                        yield ArtifactInfo(path=path, zipinfo=i, name=member_path.parts[1])
+                        yield ArtifactInfo(path=path, zipinfo=i, name=member_path.parts[1], bundle=True)
 
 
 
@@ -409,8 +410,13 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
                 _unpack_member(output_path, info.path, archive, info.zipinfo)
 
         gather_key = workflow_lut[name]
+        desired_files = [i.name for i in filter(lambda x: x.bundle == False, desired_members)]
         # Bundles might add multiple members with the same name - clean that up
-        gather_package = { gather_key: list(set([i.name for i in desired_members])) }
+        desired_bundles = list(set([i.name for i in list(filter(lambda x: x.bundle == True, desired_members))]))
+        gather_package = { gather_key: desired_files }
+        if len(desired_bundles) > 0:
+            key = "macBundleExternal" if gather_key == "macExternal" else "macBundleInternal"
+            gather_package[key] = desired_bundles
         with output_path.joinpath("control.json").open("w") as fp:
             json.dump(gather_package, fp, indent=2)
 

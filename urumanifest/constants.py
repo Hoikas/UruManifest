@@ -65,6 +65,8 @@ gather_manifests = {
     "mac": _manifests(None, None, "macExternal"),
     "macInternal": _manifests("MacThinInternal", None, "MacInternal"),
     "macExternal": _manifests("MacThinExternal", None, "MacExternal"),
+    "macBundleInternal": _manifests("MacThinInternal", None, "MacInternal"),
+    "macBundleExternal": _manifests("MacThinExternal", None, "MacExternal"),
 }
 
 class _directorytuple(NamedTuple):
@@ -85,6 +87,8 @@ gather_lut = {
     "internal64": _directorytuple("", "client/windows_amd64/internal"),
     "macexternal": _directorytuple("", "client/mac/external"),
     "macinternal": _directorytuple("", "client/mac/internal"),
+    "macbundleexternal": _directorytuple("", "client/mac/external"),
+    "macbundleinternal": _directorytuple("", "client/mac/internal"),
     "mac": _directorytuple("", "client/macos_ia32/external"),
     "prereq": _directorytuple("", "dependencies/windows_ia32"),
     "prereq64": _directorytuple("", "dependencies/windows_amd64"),
