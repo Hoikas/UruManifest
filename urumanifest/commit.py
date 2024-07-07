@@ -37,7 +37,7 @@ def _add_to_tar_archive(info: tarfile.TarInfo):
     info.mode = 0o777
     return info
 
-def _compress_asset(source_path: Path, output_path: Path):
+def _compress_asset(source_path: Path, output_path: Path, bundle: bool):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if source_path.is_dir():
         with tarfile.TarFile.open(output_path, "w:gz") as tar:
@@ -142,7 +142,8 @@ def compress_dirty_assets(manifests: Dict[str, Set[Path]], cached_assets: Dict[P
             if staged_asset.flags & ManifestFlags.dirty or force:
                 future = executor.submit(_compress_asset,
                                          source_asset.source_path,
-                                         asset_output_path)
+                                         asset_output_path,
+                                         staged_asset.flags &  ManifestFlags.bundle)
                 future.add_done_callback(functools.partial(on_compress, staged_asset))
             else:
                 staged_asset.download_hash = cached_asset.download_hash
