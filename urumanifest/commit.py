@@ -63,7 +63,7 @@ def _hash_asset(args: Tuple[Path, Path, bool]) -> Tuple[Path, str, int]:
         bundle_name = source_path.stem
         # Guess the executable path - we could get the exact name if we could unpack the Info.plist
         # in a cross platform way.
-        source_path = source_path.joinpath(Path("Contents/MacOS",  bundle_name))
+        source_path = source_path.joinpath("Contents", MacOS",  bundle_name)
     with source_path.open("rb") as in_stream:
         _io_loop(in_stream, h.update)
     return server_path, h.hexdigest(), source_path.stat().st_size
@@ -128,10 +128,8 @@ def compress_dirty_assets(manifests: Dict[str, Set[Path]], cached_assets: Dict[P
         for server_path, staged_asset, source_asset, cached_asset in asset_iter:
             assert server_path.parent.name
 
-            if staged_asset.flags & ManifestFlags.bundle:
-                asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.tgz")
-            else:
-                asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.gz")
+            output_suffix = "tgz" if staged_asset.flags & ManifestFlags.bundle else "gz"
+            asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.{output_suffix}")
             staged_asset.download_name = asset_output_path.relative_to(output_path)
 
             # While the old, sucky manifest generator was picky about what it compressed, we're not
@@ -143,7 +141,7 @@ def compress_dirty_assets(manifests: Dict[str, Set[Path]], cached_assets: Dict[P
                 future = executor.submit(_compress_asset,
                                          source_asset.source_path,
                                          asset_output_path,
-                                         staged_asset.flags &  ManifestFlags.bundle)
+                                         staged_asset.flags & ManifestFlags.bundle)
                 future.add_done_callback(functools.partial(on_compress, staged_asset))
             else:
                 staged_asset.download_hash = cached_asset.download_hash
