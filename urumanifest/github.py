@@ -414,7 +414,7 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
         # Bundles might add multiple members with the same name - clean that up
         desired_bundles = list(set([i.name for i in list(filter(lambda x: x.bundle == True, desired_members))]))
         gather_package = { gather_key: desired_files }
-        if len(desired_bundles) > 0:
+        if desired_bundles:
             key = "macBundleExternal" if gather_key == "macExternal" else "macBundleInternal"
             gather_package[key] = desired_bundles
         with output_path.joinpath("control.json").open("w") as fp:
