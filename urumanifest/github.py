@@ -176,10 +176,8 @@ class GitHub:
 
     def download_file(self, url: str, hook: Callable[[int, int, int], None] = None, delete: bool = True) -> tempfile.NamedTemporaryFile:
         logging.trace(f"Downloading {url}")
-        headers = dict()
-        if self._token is not None:
-            headers["Authorization"] = f"token {self._token}"
-        req = urllib.request.Request(url, headers=headers)
+        req = urllib.request.Request(url)
+        req.add_unredirected_header("Authorization", f"token {self._token}")
         with closing(urllib.request.urlopen(req)) as res:
             fp = tempfile.NamedTemporaryFile("w+b", delete=delete)
             size, block = 0, 1024 * 8
