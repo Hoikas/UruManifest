@@ -375,6 +375,7 @@ class ArtifactInfo(NamedTuple):
     name: str
     bundle: bool = False
 
+
 def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, name: str, artifact: tempfile.NamedTemporaryFile):
     logging.debug(f"Decompressing {name}.zip from {artifact.name}")
 
