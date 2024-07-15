@@ -45,6 +45,7 @@ crypt_types = {
 
 # All gather sections that list installer prerequisites
 gather_installers = frozenset(("prereq", "prereq64"))
+mac_bundles = frozenset(("macBundleInternal", "macBundleExternal"))
 
 class _manifests(NamedTuple):
     thin: str

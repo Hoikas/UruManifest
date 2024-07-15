@@ -191,7 +191,7 @@ def find_client_dependencies(source_assets: Dict[Path, Asset],
 
     def track_manifest_dependency(client_path: Path, server_path: Path, category: str, manifest_names):
         flags = ManifestFlags.installer if category in gather_installers else 0
-        flags |= ManifestFlags.bundle if client_path.suffix == ".app" else 0
+        flags |= ManifestFlags.bundle if category in mac_bundles else 0
         track_dependency(client_path, server_path, flags)
         for name in manifest_names:
             if name:
