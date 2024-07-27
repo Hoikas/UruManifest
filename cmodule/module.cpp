@@ -42,7 +42,7 @@ namespace
 
     inline uint32_t swap_le(uint32_t value)
     {
-#ifdef BIG_ENDIAN
+#ifdef URUMANIFEST_BIG_ENDIAN
         value = byteswap(value);
 #endif
         return value;
