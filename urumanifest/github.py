@@ -22,12 +22,11 @@ import logging
 import math
 import json
 from pathlib import Path, PurePosixPath
+import requests
 import subprocess
 import sys
 import tempfile
 from typing import Any, Callable, Dict, Iterator, List, NamedTuple, Optional, Sequence, Tuple
-import urllib.error
-import urllib.request
 import zipfile
 
 from constants import *
@@ -63,19 +62,18 @@ class GitHub:
         url = f"https://api.github.com{endpoint}"
         logging.trace(f"Sending {method} request to {url}")
 
-        data = json.dumps(query).encode() if query else None
         headers = dict(Accept="application/vnd.github.v3+json")
         if self._token:
-            headers["Authorization"] = f"token {self._token}"
-        req = urllib.request.Request(url, data, headers, method=method)
+            headers["Authorization"] = f"Bearer {self._token}"
         try:
-            res = urllib.request.urlopen(req)
-        except urllib.error.HTTPError as e:
-            if e.code == 403:
+            res = requests.request(method, url, json=query, headers=headers)
+            res.raise_for_status()
+        except requests.RequestException as e:
+            if e.response.status_code == 403:
                 raise GitHubError("GitHub says 'verbotten'... You may be rate-limited.")
             raise
         else:
-            return json.load(res)
+            return res.json()
 
     def _invoke_paginated_request(self, method: str, endpoint: str, **query) -> Iterator[Dict[str, Any]]:
         count_per_req = 30
@@ -180,8 +178,6 @@ class GitHub:
         if self._token is not None:
             headers["Authorization"] = f"Bearer {self._token}"
 
-        # HACK for now... urllib.request gives a 403 :(
-        import requests
         res = requests.get(url, headers=headers, stream=True)
         with closing(res) as req:
             fp = tempfile.NamedTemporaryFile("w+b", delete=delete)
