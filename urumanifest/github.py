@@ -176,22 +176,22 @@ class GitHub:
 
     def download_file(self, url: str, hook: Callable[[int, int, int], None] = None, delete: bool = True) -> tempfile.NamedTemporaryFile:
         logging.trace(f"Downloading {url}")
-        req = urllib.request.Request(url)
-        req.add_unredirected_header("Authorization", f"token {self._token}")
-        with closing(urllib.request.urlopen(req)) as res:
+        headers = dict()
+        if self._token is not None:
+            headers["Authorization"] = f"Bearer {self._token}"
+
+        # HACK for now... urllib.request gives a 403 :(
+        import requests
+        res = requests.get(url, headers=headers, stream=True)
+        with closing(res) as req:
             fp = tempfile.NamedTemporaryFile("w+b", delete=delete)
-            size, block = 0, 1024 * 8
-            if hook is not None:
-                hook(0, 0, res.info().get("Content-Length", -1))
-            while True:
-                buf = res.read1(block)
-                if not buf:
-                    break
-                fp.write(buf)
-                chunksize = len(buf)
+            size = 0
+            for content in req.iter_content(None):
+                fp.write(content)
+                chunksize = len(content)
                 size += chunksize
                 if hook is not None:
-                    hook(chunksize, size, res.info().get("Content-Length", -1))
+                    hook(chunksize, size, req.headers.get("Content-Length", -1))
             fp.seek(0)
             return fp
 
