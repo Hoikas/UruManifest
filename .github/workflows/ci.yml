@@ -3,10 +3,20 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform.os }}
     strategy:
       matrix:
-        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12"]
+        platform:
+          - { os: windows-latest, python: "3.6" }
+          - { os: ubuntu-22.04, python: "3.7" }
+          - { os: ubuntu-24.04, python: "3.8" }
+          - { os: ubuntu-24.04, python: "3.9" }
+          - { os: ubuntu-24.04, python: "3.10" }
+          - { os: ubuntu-24.04, python: "3.11" }
+          - { os: ubuntu-24.04, python: "3.12" }
+          - { os: ubuntu-24.04, python: "3.13" }
+          - { os: macos-14, python: "3.12" }
+          - { os: macos-15, python: "3.13"}
 
     steps:
       - name: Checkout
@@ -15,7 +25,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.platform.python }}
 
       - name: Install Dependencies
         run: |
