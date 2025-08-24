@@ -19,12 +19,14 @@ import itertools
 import json
 import logging
 from pathlib import Path, PureWindowsPath
+import pickle
 import subprocess
 import sys
 from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple, Union
 
 from constants import *
 import manifest
+import utils
 
 @dataclass
 class Asset:
@@ -242,12 +244,40 @@ def load_prebuilt_assets(data_path: Path, scripts_path: Path, py_exe: Path) -> D
 
     prebuilts = {}
 
-    def find_python_dist_packages():
-        result = subprocess.run([str(py_exe), "-c",
-                                "import sys, distutils.sysconfig;"
-                                "sys.stdout.write(distutils.sysconfig.get_python_lib(plat_specific=False,standard_lib=True))"],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return Path(result.stdout.decode(sys.getdefaultencoding()))
+    def find_python_dist_packages() -> Optional[Path]:
+        if py_exe is None or not py_exe.exists():
+            logging.critical("Python is not available???")
+            return None
+
+        py_tools_path = utils.find_python2_tools()
+        if not py_tools_path.exists():
+            raise AssetError("Could not find Python2 helper module")
+
+        proc = subprocess.Popen(
+            (str(py_exe), str(py_tools_path)),
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=False
+        )
+        buf = pickle.dumps({"cmd": "get_python_lib"}, 0)
+
+        # Whoosh... off it goes...
+        stdout, stderr = proc.communicate(buf)
+        if stderr:
+            logging.error(stderr.decode(sys.getdefaultencoding()))
+        if stdout:
+            result = pickle.loads(stdout, encoding="bytes")
+            if result["returncode"] == PyToolsResultCodes.success:
+                return Path(result["python_lib"].decode("utf-8").strip())
+
+            # If we're still here, py2tools crashed.
+            logging.critical(f"Py2Tools crashed fetching the stdlib")
+            for i in result.get("traceback", []):
+                try:
+                    logging.critical(i.decode("utf-8").strip())
+                except UnicodeError:
+                    pass
+
+            raise AssetError("Failed to fetch the Python stdlib")
 
     def handle_prebuilts(category: str, server_directory: str, base_path: Path,
                          source_path: Optional[Path] = None, prefix_path: Path = Path(),
@@ -288,7 +318,7 @@ def load_prebuilt_assets(data_path: Path, scripts_path: Path, py_exe: Path) -> D
     if not scripts_path.joinpath("Python", "system").is_dir():
         logging.debug("Using build system's python stdlib...")
         stdlib_path = find_python_dist_packages()
-        if stdlib_path.is_dir():
+        if stdlib_path is not None and stdlib_path.is_dir():
             logging.debug(f"... from {stdlib_path}")
             handle_prebuilts("python", "", stdlib_path, prefix_path=Path("Python", "system"),
                              skip_dirs={"__pycache__", "site-packages", "asyncio", "concurrent",

@@ -141,11 +141,24 @@ def compyle(py_file_path, py_glue_path=None, module_name=u"<string>", force_appe
         result[u"traceback"] = _format_exc_unicode()
     return result
 
+def get_python_lib():
+    result = {}
+
+    if sys.version_info >= (3, 2):
+        from sysconfig import get_path
+        result[u"python_lib"] = get_path("stdlib").encode("utf-8")
+    else:
+        from distutils.sysconfig import get_python_lib
+        result[u"python_lib"] = get_python_lib(plat_specific=False, standard_lib=True)
+
+    return result
+
 def exit():
     sys.exit(TOOLS_SUCCESS)
 
 _commands = {
     u"compyle": compyle,
+    u"get_python_lib": get_python_lib,
     u"quit": quit,
     u"exit": exit,
 }
