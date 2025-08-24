@@ -17,6 +17,7 @@ import logging
 from pathlib import Path
 import subprocess
 import sys
+from typing import Optional
 
 def check_python_version(py_exe, py_version=(2,7)):
     logging.debug(f"Checking Python interpreter version: {py_exe}")
@@ -39,7 +40,7 @@ def check_python_version(py_exe, py_version=(2,7)):
         logging.debug("Nonzero returncode")
         return False
 
-def find_python_exe(py_version=(2, 7)) -> Path:
+def find_python_exe(py_version=(2, 7)) -> Optional[Path]:
     def _find_python_reg(py_version):
         import winreg
         subkey_name = "Software\\Python\\PythonCore\\{}.{}\\InstallPath".format(*py_version)
@@ -54,7 +55,7 @@ def find_python_exe(py_version=(2, 7)) -> Path:
 
     # Maybe, someday, this will be true...
     if sys.version_info[:2] == py_version:
-        return sys.executable
+        return Path(sys.executable)
     major, minor = py_version
 
     # If we're on Windows, we can try looking in the registry...

@@ -340,7 +340,7 @@ def merge_asset_dicts(prebuilts: Dict[Path, Asset], gathers: Dict[Path, Asset]) 
     logging.debug(f"Total known assets: {len(assets)}")
     return assets
 
-def nuke_dead_manifests(cached_manifests: Dict[Path, manifest.ManifestEntry],
+def nuke_dead_manifests(cached_manifests: Dict[str, manifest.ManifestEntry],
                         cached_lists: Dict[Tuple[str, str], Sequence[manifest.ListEntry]],
                         staged_manifests: Dict[str, Set[Path]],
                         staged_lists: Dict[Tuple[str, str], Set[Path]],
