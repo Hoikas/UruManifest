@@ -45,6 +45,7 @@ crypt_types = {
 
 # All gather sections that list installer prerequisites
 gather_installers = frozenset(("prereq", "prereq64"))
+mac_bundles = frozenset(("macBundleInternal", "macBundleExternal"))
 
 class _manifests(NamedTuple):
     thin: str
@@ -63,6 +64,10 @@ gather_manifests = {
 
     # Legacy -- to be deleted??? -- TransGaming Cider Wrapper (macOS)
     "mac": _manifests(None, None, "macExternal"),
+    "macInternal": _manifests("MacThinInternal", None, "MacInternal"),
+    "macExternal": _manifests("MacThinExternal", None, "MacExternal"),
+    "macBundleInternal": _manifests("MacThinInternal", None, "MacInternal"),
+    "macBundleExternal": _manifests("MacThinExternal", None, "MacExternal"),
 }
 
 class _directorytuple(NamedTuple):
@@ -81,6 +86,10 @@ gather_lut = {
     "external64": _directorytuple("", "client/windows_amd64/external"),
     "internal": _directorytuple("", "client/windows_ia32/internal"),
     "internal64": _directorytuple("", "client/windows_amd64/internal"),
+    "macexternal": _directorytuple("", "client/mac/external"),
+    "macinternal": _directorytuple("", "client/mac/internal"),
+    "macbundleexternal": _directorytuple("", "client/mac/external"),
+    "macbundleinternal": _directorytuple("", "client/mac/internal"),
     "mac": _directorytuple("", "client/macos_ia32/external"),
     "prereq": _directorytuple("", "dependencies/windows_ia32"),
     "prereq64": _directorytuple("", "dependencies/windows_amd64"),
@@ -100,6 +109,7 @@ class ManifestFlags(enum.IntFlag):
     sound_cache_stereo = (1<<2)
     file_gzipped = (1<<3)
     installer = (1<<4)
+    bundle = (1<<5)
 
     # Internal flags
     python_file_mod = (1<<16)
@@ -153,4 +163,6 @@ workflow_lut = {
     "plasma-windows-x64-external-release": "external64",
     "plasma-windows-x86-internal-release": "internal",
     "plasma-windows-x64-internal-release": "internal64",
+    "plasma-macos-x64-internal-release": "macInternal",
+    "plasma-macos-x64-external-release": "macExternal",
 }

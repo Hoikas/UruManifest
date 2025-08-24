@@ -21,6 +21,7 @@ import itertools
 import logging
 import math
 import json
+import os
 from pathlib import Path, PurePosixPath
 import requests
 import subprocess
@@ -368,6 +369,13 @@ def _update_artifacts(staging_path: Path, database: _WorkflowDatabase, repo: str
     database.current_sha = rev
     database.valid = True
 
+class ArtifactInfo(NamedTuple):
+    path: Path
+    zipinfo: zipfile.ZipInfo
+    name: str
+    bundle: bool = False
+
+
 def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, name: str, artifact: tempfile.NamedTemporaryFile):
     logging.debug(f"Decompressing {name}.zip from {artifact.name}")
 
@@ -377,10 +385,19 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
         output_path.mkdir(parents=True, exist_ok=True)
 
         def iter_client_dir():
-            for i in filter(lambda x: not x.is_dir(), archive.infolist()):
+            for i in archive.infolist():
                 member_path = PurePosixPath(i.filename)
-                if len(member_path.parts) == 2 and member_path.parts[0] == "client":
-                    yield i
+                client_folder_name = "client"
+                if len(member_path.parts) >=  2 and member_path.parts[0] == client_folder_name:
+                    is_mac_app_bundle = member_path.parts[1].endswith(".app")
+                    if not i.is_dir() and len(member_path.parts) ==  2:
+                        yield ArtifactInfo(path=member_path.name, zipinfo=i, name=member_path.name)
+                    elif is_mac_app_bundle and not i.is_dir():
+                        # remove "client/"
+                        path = member_path.relative_to(client_folder_name)
+                        yield ArtifactInfo(path=path, zipinfo=i, name=member_path.parts[1], bundle=True)
+
+
 
         desired_members = list(iter_client_dir())
         with tqdm_logging.tqdm_logging_redirect(
@@ -390,19 +407,27 @@ def _unpack_artifact(staging_path: Path, database: _WorkflowDatabase, rev: str, 
             leave=False
         ) as progress:
             for info in progress:
-                logging.trace(f"Extracting {info.filename}")
-                _unpack_member(output_path, archive, info)
+                logging.trace(f"Extracting {info.zipinfo.filename}")
+                _unpack_member(output_path, info.path, archive, info.zipinfo)
 
         gather_key = workflow_lut[name]
-        gather_package = { gather_key: [PurePosixPath(i.filename).name for i in desired_members] }
+        desired_files = [i.name for i in filter(lambda x: x.bundle == False, desired_members)]
+        # Bundles might add multiple members with the same name - clean that up
+        desired_bundles = list(set([i.name for i in list(filter(lambda x: x.bundle == True, desired_members))]))
+        gather_package = { gather_key: desired_files }
+        if desired_bundles:
+            key = "macBundleExternal" if gather_key == "macExternal" else "macBundleInternal"
+            gather_package[key] = desired_bundles
         with output_path.joinpath("control.json").open("w") as fp:
             json.dump(gather_package, fp, indent=2)
 
         database.workflow_gathers[name] = subdir_name
 
-def _unpack_member(output_path: Path, archive: zipfile.ZipFile, info: zipfile.ZipInfo):
+def _unpack_member(output_path: Path, output_subpath: Path, archive: zipfile.ZipFile, info: zipfile.ZipInfo):
     with archive.open(info, "r") as infile:
-        with output_path.joinpath(Path(info.filename).name).open("wb") as outfile:
+        full_path = output_path.joinpath(output_subpath)
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        with full_path.open("wb") as outfile:
             block = 1024 * 8
             while True:
                 buf = infile.read(block)

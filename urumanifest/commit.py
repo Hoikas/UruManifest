@@ -23,6 +23,7 @@ import itertools
 import logging
 from pathlib import Path
 import shutil
+import tarfile
 from typing import Dict, NamedTuple, Optional, Set, Tuple, Union
 
 from assets import Asset, AssetDatabase, AssetError, AssetEntry
@@ -32,8 +33,20 @@ import manifest
 
 _BUFFER_SIZE = 10 * 1024 * 1024
 
-def _compress_asset(source_path: Path, output_path: Path):
+def _add_to_tar_archive(info: tarfile.TarInfo):
+    info.mode = 0o777
+    return info
+
+def _compress_asset(source_path: Path, output_path: Path, bundle: bool):
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if bundle:
+        with tarfile.TarFile.open(output_path, "w:gz") as tar:
+            tar.gettarinfo(source_path, arcname="")
+            tar.add(source_path, arcname="", filter=_add_to_tar_archive)
+        with output_path.open("rb") as in_stream:
+            h = hashlib.md5()
+            _io_loop(in_stream, h.update)
+        return h.hexdigest(), output_path.stat().st_size
     with source_path.open("rb") as in_stream:
         with gzip.open(output_path, "wb") as gz_stream:
             _io_loop(in_stream, gz_stream.write)
@@ -42,10 +55,15 @@ def _compress_asset(source_path: Path, output_path: Path):
         _io_loop(in_stream, h.update)
     return h.hexdigest(), output_path.stat().st_size
 
-def _hash_asset(args: Tuple[Path, Path]) -> Tuple[Path, str, int]:
-    server_path, source_path = args
+def _hash_asset(args: Tuple[Path, Path, bool]) -> Tuple[Path, str, int]:
+    server_path, source_path, mac_app_bundle = args
     # One day, we will not use such a vulnerable hashing algo...
     h = hashlib.md5()
+    if mac_app_bundle:
+        bundle_name = source_path.stem
+        # Guess the executable path - we could get the exact name if we could unpack the Info.plist
+        # in a cross platform way.
+        source_path = source_path.joinpath("Contents", "MacOS", bundle_name)
     with source_path.open("rb") as in_stream:
         _io_loop(in_stream, h.update)
     return server_path, h.hexdigest(), source_path.stat().st_size
@@ -109,7 +127,9 @@ def compress_dirty_assets(manifests: Dict[str, Set[Path]], cached_assets: Dict[P
                       for i in compressed_assets)
         for server_path, staged_asset, source_asset, cached_asset in asset_iter:
             assert server_path.parent.name
-            asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.gz")
+
+            output_suffix = "tgz" if staged_asset.flags & ManifestFlags.bundle else "gz"
+            asset_output_path = output_path.joinpath(server_path).with_suffix(f"{server_path.suffix}.{output_suffix}")
             staged_asset.download_name = asset_output_path.relative_to(output_path)
 
             # While the old, sucky manifest generator was picky about what it compressed, we're not
@@ -120,7 +140,8 @@ def compress_dirty_assets(manifests: Dict[str, Set[Path]], cached_assets: Dict[P
             if staged_asset.flags & ManifestFlags.dirty or force:
                 future = executor.submit(_compress_asset,
                                          source_asset.source_path,
-                                         asset_output_path)
+                                         asset_output_path,
+                                         staged_asset.flags & ManifestFlags.bundle)
                 future.add_done_callback(functools.partial(on_compress, staged_asset))
             else:
                 staged_asset.download_hash = cached_asset.download_hash
@@ -282,7 +303,7 @@ def hash_staged_assets(source_assets: Dict[Path, Asset], staged_assets: Dict[Pat
                        ncpus: Optional[int] = None) -> None:
     logging.info("Hashing all staged assets...")
     with concurrent.futures.ProcessPoolExecutor(max_workers=ncpus) as executor:
-        args = ((sp, source_assets[sp].source_path) for sp, sa in staged_assets.items() if not sa.flags & ManifestFlags.consumable)
+        args = ((sp, source_assets[sp].source_path, sa.flags & ManifestFlags.bundle) for sp, sa in staged_assets.items() if not sa.flags & ManifestFlags.consumable)
         for server_path, h, sz in executor.map(_hash_asset, args, chunksize=64):
             logging.trace(f"{server_path}: {h}")
             staged_asset = staged_assets[server_path]
