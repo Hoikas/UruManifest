@@ -54,8 +54,12 @@ def find_python_exe(py_version=(2, 7)) -> Optional[Path]:
         return None
 
     # Maybe, someday, this will be true...
+    # NOTE: venv python.exe will cause bad things to happen!
     if sys.version_info[:2] == py_version:
-        return Path(sys.executable)
+        if sys.prefix == sys.base_prefix:
+            return Path(sys.executable)
+        else:
+            logging.debug("The current python executable is a venv. It cannot be used for py2tools!")
     major, minor = py_version
 
     # If we're on Windows, we can try looking in the registry...
