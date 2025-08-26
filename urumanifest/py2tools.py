@@ -123,7 +123,7 @@ def compyle(py_file_path, py_glue_path=None, module_name=u"<string>", force_appe
         py_source_code = _read_py_source(py_file_path)
     except:
         return { u"returncode": TOOLS_FILE_NOT_FOUND }
-    if py_glue_path:
+    if append_glue and py_glue_path:
         py_source_code += "\n\n"
         try:
             py_source_code += _read_py_source(py_glue_path)
